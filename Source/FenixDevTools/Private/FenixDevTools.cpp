@@ -4,47 +4,51 @@
 #include "LevelEditor.h"
 #include "ToolMenus.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "Styling/AppStyle.h"
 
 #define LOCTEXT_NAMESPACE "FFenixDevToolsModule"
 
 void FFenixDevToolsModule::StartupModule()
 {
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Module started"));
+
 	FFenixDevToolsCommands::Register();
 
 	PluginCommands = MakeShareable(new FUICommandList);
 	PluginCommands->MapAction(
 		FFenixDevToolsCommands::Get().ExportLevelToJson,
 		FExecuteAction::CreateRaw(this, &FFenixDevToolsModule::ExportLevelToJson),
-		FCanExecuteAction()
+		FCanExecuteAction::CreateLambda([]() { return true; })
 	);
 
-	UToolMenus::RegisterStartupCallback(
-		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FFenixDevToolsModule::RegisterMenus)
+	// Extend the Level Editor toolbar
+	FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+	TSharedPtr<FExtender> ToolbarExtender = MakeShareable(new FExtender);
+	ToolbarExtender->AddToolBarExtension(
+		"Settings",
+		EExtensionHook::After,
+		PluginCommands,
+		FToolBarExtensionDelegate::CreateRaw(this, &FFenixDevToolsModule::AddToolbarButton)
 	);
+	LevelEditorModule.GetToolBarExtensibilityManager()->AddExtender(ToolbarExtender);
+
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Toolbar button registered"));
 }
 
 void FFenixDevToolsModule::ShutdownModule()
 {
-	UToolMenus::UnRegisterStartupCallback(this);
-	UToolMenus::UnregisterOwner(this);
 	FFenixDevToolsCommands::Unregister();
 }
 
-void FFenixDevToolsModule::RegisterMenus()
+void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 {
-	FToolMenuOwnerScoped OwnerScoped(this);
-
-	// Add button to the Level Editor toolbar
-	UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.AssetsToolBar");
-	FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("FenixDevTools");
-	Section.Label = LOCTEXT("FenixSection", "Fenix");
-
-	Section.AddEntry(FToolMenuEntry::InitToolBarButton(
+	Builder.AddToolBarButton(
 		FFenixDevToolsCommands::Get().ExportLevelToJson,
+		NAME_None,
 		LOCTEXT("ExportLevelBtn", "Export Level"),
 		LOCTEXT("ExportLevelTooltip", "Export all level actors to a Fenix JSON file"),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Export")
-	));
+	);
 }
 
 void FFenixDevToolsModule::ExportLevelToJson()
