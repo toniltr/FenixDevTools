@@ -58,7 +58,7 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 		TEXT("RectLight"),
 		TEXT("ExponentialHeightFog"),
 		TEXT("UltraDynamicSky"),
-		TEXT("BP_UltraDynamicSky_C"),
+		TEXT("Ultra_Dynamic_Sky"),
 		TEXT("PostProcessVolume"),
 		TEXT("LightmassImportanceVolume"),
 		TEXT("PlayerStart"),
@@ -69,6 +69,15 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 		TEXT("LevelSequenceActor"),
 		TEXT("AbstractNavData"),
 		TEXT("RecastNavMesh"),
+		TEXT("CameraActor"),
+		TEXT("BP_Player"),
+	};
+
+	// Actor labels to always exclude regardless of class
+	static const TArray<FString> ExcludedLabels = {
+		TEXT("Ultra_Dynamic_Sky"),
+		TEXT("BP_Player"),
+		TEXT("CameraActor"),
 	};
 
 	for (TActorIterator<AActor> It(World); It; ++It)
@@ -86,6 +95,18 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 		{
 			if (ClassName.Equals(Excluded, ESearchCase::IgnoreCase) ||
 				ClassName.StartsWith(Excluded, ESearchCase::IgnoreCase))
+			{
+				bExcluded = true;
+				break;
+			}
+		}
+		if (bExcluded) continue;
+
+		// Also filter by actor label
+		const FString ActorLabel = Actor->GetActorLabel();
+		for (const FString& ExLabel : ExcludedLabels)
+		{
+			if (ActorLabel.StartsWith(ExLabel, ESearchCase::IgnoreCase))
 			{
 				bExcluded = true;
 				break;
@@ -145,10 +166,16 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 		ItemTemplate->SetObjectField(TEXT("placement"),       PlacementObj);
 
 		TArray<TSharedPtr<FJsonValue>> EmptyArray;
-		ItemTemplate->SetArrayField(TEXT("conditions_rules"), EmptyArray);
-		ItemTemplate->SetArrayField(TEXT("events"),           EmptyArray);
-		ItemTemplate->SetArrayField(TEXT("blocked_events"),   EmptyArray);
-		ItemTemplate->SetStringField(TEXT("intercept_npc"),   TEXT(""));
+
+		// Conditions group matching Fenix JSON format
+		TSharedPtr<FJsonObject> ConditionsObj = MakeShared<FJsonObject>();
+		ConditionsObj->SetStringField(TEXT("operator"), TEXT("AND"));
+		ConditionsObj->SetArrayField(TEXT("rules"), EmptyArray);
+		ItemTemplate->SetObjectField(TEXT("conditions"),    ConditionsObj);
+
+		ItemTemplate->SetArrayField(TEXT("events"),         EmptyArray);
+		ItemTemplate->SetArrayField(TEXT("blocked_events"), EmptyArray);
+		ItemTemplate->SetStringField(TEXT("intercept_npc"), TEXT(""));
 
 		ActorObj->SetObjectField(TEXT("item_template"), ItemTemplate);
 
