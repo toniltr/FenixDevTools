@@ -35,7 +35,7 @@ void FFenixDevToolsModule::RegisterMenus()
 	FToolMenuOwnerScoped OwnerScoped(this);
 
 	// Add button to the Level Editor toolbar
-	UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.PlayToolBar");
+	UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.AssetsToolBar");
 	FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("FenixDevTools");
 	Section.Label = LOCTEXT("FenixSection", "Fenix");
 
@@ -49,6 +49,7 @@ void FFenixDevToolsModule::RegisterMenus()
 
 void FFenixDevToolsModule::ExportLevelToJson()
 {
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Button clicked!"));
 	FFenixLevelExporter::ExportCurrentLevel();
 }
 

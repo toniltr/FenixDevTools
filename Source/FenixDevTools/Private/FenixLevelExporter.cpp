@@ -15,17 +15,34 @@
 
 bool FFenixLevelExporter::ExportCurrentLevel()
 {
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] ExportCurrentLevel called"));
+
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!World)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No editor world found"));
+		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No editor world found — GEditor: %s"),
+			GEditor ? TEXT("valid") : TEXT("null"));
 		return false;
 	}
 
-	const FString JsonStr = BuildJson(World);
-	const FString SavePath = ShowSaveDialog();
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] World found: %s"), *World->GetMapName());
 
-	if (SavePath.IsEmpty()) return false;
+	const FString JsonStr = BuildJson(World);
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] JSON built — %d chars"), JsonStr.Len());
+
+	// Try saving directly to project Content dir without dialog first
+	const FString AutoPath = FPaths::ProjectContentDir() / TEXT("level_export.json");
+	if (FFileHelper::SaveStringToFile(JsonStr, *AutoPath))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Auto-saved to: %s"), *AutoPath);
+	}
+
+	const FString SavePath = ShowSaveDialog();
+	if (SavePath.IsEmpty())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Dialog cancelled"));
+		return false;
+	}
 
 	if (!FFileHelper::SaveStringToFile(JsonStr, *SavePath))
 	{
