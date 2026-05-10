@@ -25,7 +25,7 @@ void FFenixDevToolsModule::StartupModule()
 	FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
 	TSharedPtr<FExtender> ToolbarExtender = MakeShareable(new FExtender);
 	ToolbarExtender->AddToolBarExtension(
-		"Settings",
+		"Play",
 		EExtensionHook::After,
 		PluginCommands,
 		FToolBarExtensionDelegate::CreateRaw(this, &FFenixDevToolsModule::AddToolbarButton)
@@ -42,6 +42,7 @@ void FFenixDevToolsModule::ShutdownModule()
 
 void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 {
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] AddToolbarButton called"));
 	Builder.AddToolBarButton(
 		FFenixDevToolsCommands::Get().ExportLevelToJson,
 		NAME_None,
