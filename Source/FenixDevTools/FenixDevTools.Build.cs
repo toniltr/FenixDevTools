@@ -24,7 +24,6 @@ public class FenixDevTools : ModuleRules
 			"Json",              // FJsonObject, FJsonSerializer
 			"JsonUtilities",     // FJsonObjectConverter
 			"Projects",          // IPluginManager
-			"DesktopPlatform",   // IDesktopPlatform — save file dialog
 		});
 	}
 }

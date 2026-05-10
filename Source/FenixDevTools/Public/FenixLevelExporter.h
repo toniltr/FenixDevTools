@@ -17,6 +17,4 @@ private:
 	// Build the JSON string from all level actors.
 	static FString BuildJson(UWorld* World);
 
-	// Show OS save-file dialog. Returns selected path or empty string.
-	static FString ShowSaveDialog();
 };

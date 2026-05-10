@@ -9,9 +9,6 @@
 #include "Serialization/JsonWriter.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
-#include "DesktopPlatformModule.h"
-#include "IDesktopPlatform.h"
-#include "Framework/Application/SlateApplication.h"
 
 bool FFenixLevelExporter::ExportCurrentLevel()
 {
@@ -30,27 +27,15 @@ bool FFenixLevelExporter::ExportCurrentLevel()
 	const FString JsonStr = BuildJson(World);
 	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] JSON built — %d chars"), JsonStr.Len());
 
-	// Try saving directly to project Content dir without dialog first
-	const FString AutoPath = FPaths::ProjectContentDir() / TEXT("level_export.json");
-	if (FFileHelper::SaveStringToFile(JsonStr, *AutoPath))
-	{
-		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Auto-saved to: %s"), *AutoPath);
-	}
-
-	const FString SavePath = ShowSaveDialog();
-	if (SavePath.IsEmpty())
-	{
-		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Dialog cancelled"));
-		return false;
-	}
-
+	// Save directly to project root — overwrite each time
+	const FString SavePath = FPaths::ProjectDir() / TEXT("level_export.json");
 	if (!FFileHelper::SaveStringToFile(JsonStr, *SavePath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] Failed to save file: %s"), *SavePath);
+		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] Failed to save: %s"), *SavePath);
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Level exported to: %s"), *SavePath);
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Exported to: %s"), *SavePath);
 	return true;
 }
 
@@ -184,24 +169,4 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 	return OutputStr;
 }
 
-FString FFenixLevelExporter::ShowSaveDialog()
-{
-	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
-	if (!DesktopPlatform) return TEXT("");
 
-	TArray<FString> SavePaths;
-	const FString DefaultPath     = FPaths::ProjectContentDir();
-	const FString DefaultFilename = TEXT("level_export.json");
-
-	const bool bSaved = DesktopPlatform->SaveFileDialog(
-		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
-		TEXT("Export Level to Fenix JSON"),
-		DefaultPath,
-		DefaultFilename,
-		TEXT("JSON Files (*.json)|*.json"),
-		EFileDialogFlags::None,
-		SavePaths
-	);
-
-	return (bSaved && SavePaths.Num() > 0) ? SavePaths[0] : TEXT("");
-}
