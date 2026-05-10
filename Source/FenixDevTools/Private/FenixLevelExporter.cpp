@@ -58,15 +58,61 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 {
 	TArray<TSharedPtr<FJsonValue>> ActorsArray;
 
+	// Classes to always exclude from export
+	static const TArray<FString> ExcludedClasses = {
+		TEXT("WorldSettings"),
+		TEXT("Brush"),
+		TEXT("DefaultPhysicsVolume"),
+		TEXT("GameplayDebuggerCategoryReplicator"),
+		TEXT("AtmosphericFog"),
+		TEXT("SkyAtmosphere"),
+		TEXT("SkyLight"),
+		TEXT("DirectionalLight"),
+		TEXT("PointLight"),
+		TEXT("SpotLight"),
+		TEXT("RectLight"),
+		TEXT("ExponentialHeightFog"),
+		TEXT("UltraDynamicSky"),
+		TEXT("BP_UltraDynamicSky_C"),
+		TEXT("PostProcessVolume"),
+		TEXT("LightmassImportanceVolume"),
+		TEXT("PlayerStart"),
+		TEXT("NavMeshBoundsVolume"),
+		TEXT("ReflectionCapture"),
+		TEXT("SphereReflectionCapture"),
+		TEXT("BoxReflectionCapture"),
+		TEXT("LevelSequenceActor"),
+		TEXT("AbstractNavData"),
+		TEXT("RecastNavMesh"),
+	};
+
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
 		if (!Actor) continue;
 
-		// Skip editor-only actors (camera, sky, lights etc.)
-		// Include only actors placed by the user (not transient)
 		if (Actor->IsEditorOnly()) continue;
 		if (Actor->HasAnyFlags(RF_Transient)) continue;
+
+		// Skip internal/engine classes
+		const FString ClassName = Actor->GetClass()->GetName();
+		bool bExcluded = false;
+		for (const FString& Excluded : ExcludedClasses)
+		{
+			if (ClassName.Equals(Excluded, ESearchCase::IgnoreCase) ||
+				ClassName.StartsWith(Excluded, ESearchCase::IgnoreCase))
+			{
+				bExcluded = true;
+				break;
+			}
+		}
+		if (bExcluded) continue;
+
+		// Only include Blueprint actors from /Game/ — skip native engine actors
+		const FString ClassPath = Actor->GetClass()->GetPathName();
+		const bool bIsGameBlueprint = ClassPath.StartsWith(TEXT("/Game/"));
+		const bool bIsNativeActor   = !ClassPath.Contains(TEXT("/"));
+		if (bIsNativeActor && !bIsGameBlueprint) continue;
 
 		const FVector  Loc   = Actor->GetActorLocation();
 		const FRotator Rot   = Actor->GetActorRotation();
@@ -96,16 +142,21 @@ FString FFenixLevelExporter::BuildJson(UWorld* World)
 		PlacementObj->SetObjectField(TEXT("rotation"), RotObj);
 		PlacementObj->SetObjectField(TEXT("scale"),    ScaleObj);
 
+		// Clean blueprint class name — remove _C suffix added by UE
+		FString BpClass = Actor->GetClass()->GetName();
+		if (BpClass.EndsWith(TEXT("_C")))
+			BpClass = BpClass.LeftChop(2);
+
 		// Actor entry
 		TSharedPtr<FJsonObject> ActorObj = MakeShared<FJsonObject>();
-		ActorObj->SetStringField(TEXT("name"),           Actor->GetName());
-		ActorObj->SetStringField(TEXT("blueprint_class"), Actor->GetClass()->GetName());
-		ActorObj->SetObjectField(TEXT("placement"),      PlacementObj);
+		ActorObj->SetStringField(TEXT("name"),            Actor->GetActorLabel());
+		ActorObj->SetStringField(TEXT("blueprint_class"), BpClass);
+		ActorObj->SetObjectField(TEXT("placement"),       PlacementObj);
 
 		// Fenix item template — ready to paste into JSON
 		TSharedPtr<FJsonObject> ItemTemplate = MakeShared<FJsonObject>();
 		ItemTemplate->SetStringField(TEXT("uuid"),            TEXT(""));
-		ItemTemplate->SetStringField(TEXT("blueprint_class"), Actor->GetClass()->GetName());
+		ItemTemplate->SetStringField(TEXT("blueprint_class"), BpClass);
 		ItemTemplate->SetObjectField(TEXT("placement"),       PlacementObj);
 
 		TArray<TSharedPtr<FJsonValue>> EmptyArray;
