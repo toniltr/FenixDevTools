@@ -26,6 +26,7 @@ public class FenixDevTools : ModuleRules
 			"Projects",          // IPluginManager
 			"DesktopPlatform",
 			"EditorScriptingUtilities",
+			"InputCore",  
 		});
 	}
 }

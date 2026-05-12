@@ -11,6 +11,8 @@ public:
 
 	// Show file dialog to pick a JSON, then show scene picker, then import.
 	static void ShowImportDialog();
+	
+	static void ImportScene(const TSharedPtr<FJsonObject>& Scene);
 
 private:
 
@@ -20,9 +22,6 @@ private:
 
 	// Show a window to pick a scene from the list.
 	static void ShowScenePicker(const TArray<TSharedPtr<FJsonObject>>& Scenes);
-
-	// Clear all level actors except preserved ones, then spawn scene items.
-	static void ImportScene(const TSharedPtr<FJsonObject>& Scene);
 
 	// Destroy all non-preserved actors in the level.
 	static void ClearLevel(UWorld* World);
