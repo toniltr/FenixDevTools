@@ -32,6 +32,9 @@ private:
 	// Spawn a single item actor from JSON.
 	static void SpawnItem(UWorld* World, const TSharedPtr<FJsonObject>& Item);
 
+	// Spawn a single character (NPC) actor from JSON.
+	static void SpawnCharacter(UWorld* World, const TSharedPtr<FJsonObject>& Character);
+
 	// Open OS file picker for JSON files. Returns path or empty.
 	static FString ShowOpenFileDialog();
 };
