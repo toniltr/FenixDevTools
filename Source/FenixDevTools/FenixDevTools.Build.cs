@@ -24,6 +24,8 @@ public class FenixDevTools : ModuleRules
 			"Json",              // FJsonObject, FJsonSerializer
 			"JsonUtilities",     // FJsonObjectConverter
 			"Projects",          // IPluginManager
+			"DesktopPlatform",
+			"EditorScriptingUtilities",
 		});
 	}
 }

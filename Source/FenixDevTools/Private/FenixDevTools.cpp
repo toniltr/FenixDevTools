@@ -1,6 +1,7 @@
 #include "FenixDevTools.h"
 #include "FenixDevToolsCommands.h"
 #include "FenixLevelExporter.h"
+#include "FenixSceneImporter.h"
 #include "LevelEditor.h"
 #include "ToolMenus.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -18,6 +19,12 @@ void FFenixDevToolsModule::StartupModule()
 	PluginCommands->MapAction(
 		FFenixDevToolsCommands::Get().ExportLevelToJson,
 		FExecuteAction::CreateRaw(this, &FFenixDevToolsModule::ExportLevelToJson),
+		FCanExecuteAction::CreateLambda([]() { return true; })
+	);
+
+	PluginCommands->MapAction(
+		FFenixDevToolsCommands::Get().ImportSceneFromJson,
+		FExecuteAction::CreateRaw(this, &FFenixDevToolsModule::ImportSceneFromJson),
 		FCanExecuteAction::CreateLambda([]() { return true; })
 	);
 
@@ -43,6 +50,7 @@ void FFenixDevToolsModule::ShutdownModule()
 void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 {
 	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] AddToolbarButton called"));
+
 	Builder.AddToolBarButton(
 		FFenixDevToolsCommands::Get().ExportLevelToJson,
 		NAME_None,
@@ -50,12 +58,26 @@ void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 		LOCTEXT("ExportLevelTooltip", "Export all level actors to a Fenix JSON file"),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Export")
 	);
+
+	Builder.AddToolBarButton(
+		FFenixDevToolsCommands::Get().ImportSceneFromJson,
+		NAME_None,
+		LOCTEXT("ImportSceneBtn", "Import Scene"),
+		LOCTEXT("ImportSceneTooltip", "Load a Fenix story JSON and spawn a scene into the level"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Import")
+	);
 }
 
 void FFenixDevToolsModule::ExportLevelToJson()
 {
-	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Button clicked!"));
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Export button clicked"));
 	FFenixLevelExporter::ExportCurrentLevel();
+}
+
+void FFenixDevToolsModule::ImportSceneFromJson()
+{
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Import button clicked"));
+	FFenixSceneImporter::ShowImportDialog();
 }
 
 #undef LOCTEXT_NAMESPACE

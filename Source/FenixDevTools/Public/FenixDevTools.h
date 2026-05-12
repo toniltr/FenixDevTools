@@ -16,6 +16,7 @@ private:
 
 	void AddToolbarButton(FToolBarBuilder& Builder);
 	void ExportLevelToJson();
+	void ImportSceneFromJson();
 
 	TSharedPtr<class FUICommandList> PluginCommands;
 };

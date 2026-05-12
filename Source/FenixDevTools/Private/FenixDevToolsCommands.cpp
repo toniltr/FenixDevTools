@@ -11,6 +11,14 @@ void FFenixDevToolsCommands::RegisterCommands()
 		EUserInterfaceActionType::Button,
 		FInputChord()
 	);
+
+	UI_COMMAND(
+		ImportSceneFromJson,
+		"Import Scene",
+		"Load a Fenix story JSON and spawn a scene into the current level",
+		EUserInterfaceActionType::Button,
+		FInputChord()
+	);
 }
 
 #undef LOCTEXT_NAMESPACE
