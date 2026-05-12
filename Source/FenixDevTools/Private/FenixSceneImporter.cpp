@@ -363,5 +363,10 @@ void FFenixSceneImporter::ImportScene(const TSharedPtr<FJsonObject> &Scene)
 		}
 	}
 
+
+	GEditor->RedrawLevelEditingViewports(true);
+	GEditor->NoteSelectionChange();
+
+
 	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Scene '%s' imported successfully"), *SceneName);
 }

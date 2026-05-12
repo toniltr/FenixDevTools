@@ -12,6 +12,9 @@ public:
 	// Returns true if the file was saved successfully.
 	static bool ExportCurrentLevel();
 
+	static TSharedPtr<FJsonObject> BuildSceneJson(UWorld* World);
+
+
 private:
 
 	// Build the JSON string from all level actors.

@@ -121,77 +121,79 @@ static bool ShouldExcludeActor(AActor* Actor)
 
 // ── Build JSON ────────────────────────────────────────────────
 
+TSharedPtr<FJsonObject> FFenixLevelExporter::BuildSceneJson(UWorld* World)
+{
+    if (!World) return nullptr;
+
+    TArray<TSharedPtr<FJsonValue>> ItemsArray;
+    TSharedPtr<FJsonObject> CameraPlacement;
+    TSharedPtr<FJsonObject> PlayerPlacement;
+
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        AActor* Actor = *It;
+        if (!Actor) continue;
+
+        const FString Label = Actor->GetActorLabel();
+        const FString Class = Actor->GetClass()->GetName();
+
+        if (Class.Contains(TEXT("CameraActor")) || Label.Contains(TEXT("CameraActor")))
+        {
+            CameraPlacement = MakePlacement(Actor->GetActorLocation(),
+                                            Actor->GetActorRotation(),
+                                            Actor->GetActorScale3D());
+            continue;
+        }
+        if (Class.Contains(TEXT("BP_Player")) || Label.StartsWith(TEXT("BP_Player")))
+        {
+            PlayerPlacement = MakePlacement(Actor->GetActorLocation(),
+                                            Actor->GetActorRotation(),
+                                            Actor->GetActorScale3D());
+            continue;
+        }
+        if (ShouldExcludeActor(Actor)) continue;
+
+        FString BpClass = Actor->GetClass()->GetName();
+        if (BpClass.EndsWith(TEXT("_C"))) BpClass = BpClass.LeftChop(2);
+
+        TSharedPtr<FJsonObject> Placement = MakePlacement(
+            Actor->GetActorLocation(),
+            Actor->GetActorRotation(),
+            Actor->GetActorScale3D());
+
+        ItemsArray.Add(MakeShared<FJsonValueObject>(MakeItem(BpClass, Placement)));
+    }
+
+    TSharedPtr<FJsonObject> Scene = MakeShared<FJsonObject>();
+    Scene->SetStringField(TEXT("uuid"), TEXT(""));
+    Scene->SetStringField(TEXT("name"), World->GetMapName());
+
+    if (CameraPlacement.IsValid())
+        Scene->SetObjectField(TEXT("camera"), CameraPlacement);
+    if (PlayerPlacement.IsValid())
+        Scene->SetObjectField(TEXT("player"), PlayerPlacement);
+
+    Scene->SetArrayField(TEXT("items"), ItemsArray);
+
+    TArray<TSharedPtr<FJsonValue>> EmptyChars;
+    Scene->SetArrayField(TEXT("characters"), EmptyChars);
+
+    return Scene;
+}
+
+// El export genérico ahora usa BuildSceneJson internamente
 FString FFenixLevelExporter::BuildJson(UWorld* World)
 {
-	TArray<TSharedPtr<FJsonValue>> ItemsArray;
-	TSharedPtr<FJsonObject> CameraPlacement;
-	TSharedPtr<FJsonObject> PlayerPlacement;
+    TSharedPtr<FJsonObject> SceneTemplate = BuildSceneJson(World);
+    if (!SceneTemplate.IsValid()) return TEXT("{}");
 
-	for (TActorIterator<AActor> It(World); It; ++It)
-	{
-		AActor* Actor = *It;
-		if (!Actor) continue;
+    TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("level"),          World->GetMapName());
+    Root->SetStringField(TEXT("exported_at"),     FDateTime::Now().ToString());
+    Root->SetObjectField(TEXT("scene_template"),  SceneTemplate);
 
-		const FString Label = Actor->GetActorLabel();
-		const FString Class = Actor->GetClass()->GetName();
-
-		// Extract camera and player separately
-		if (Class.Contains(TEXT("CameraActor")) || Label.Contains(TEXT("CameraActor")))
-		{
-			CameraPlacement = MakePlacement(
-				Actor->GetActorLocation(),
-				Actor->GetActorRotation(),
-				Actor->GetActorScale3D());
-			continue;
-		}
-
-		if (Class.Contains(TEXT("BP_Player")) || Label.StartsWith(TEXT("BP_Player")))
-		{
-			PlayerPlacement = MakePlacement(
-				Actor->GetActorLocation(),
-				Actor->GetActorRotation(),
-				Actor->GetActorScale3D());
-			continue;
-		}
-
-		if (ShouldExcludeActor(Actor)) continue;
-
-		// Clean _C suffix
-		FString BpClass = Class;
-		if (BpClass.EndsWith(TEXT("_C"))) BpClass = BpClass.LeftChop(2);
-
-		TSharedPtr<FJsonObject> Placement = MakePlacement(
-			Actor->GetActorLocation(),
-			Actor->GetActorRotation(),
-			Actor->GetActorScale3D());
-
-		ItemsArray.Add(MakeShared<FJsonValueObject>(MakeItem(BpClass, Placement)));
-	}
-
-	// Scene template — paste-ready Fenix scene format
-	TSharedPtr<FJsonObject> SceneTemplate = MakeShared<FJsonObject>();
-	SceneTemplate->SetStringField(TEXT("uuid"), TEXT(""));
-	SceneTemplate->SetStringField(TEXT("name"), World->GetMapName());
-
-	if (CameraPlacement.IsValid())
-		SceneTemplate->SetObjectField(TEXT("camera"), CameraPlacement);
-	if (PlayerPlacement.IsValid())
-		SceneTemplate->SetObjectField(TEXT("player"), PlayerPlacement);
-
-	SceneTemplate->SetArrayField(TEXT("items"), ItemsArray);
-
-	TArray<TSharedPtr<FJsonValue>> EmptyChars;
-	SceneTemplate->SetArrayField(TEXT("characters"), EmptyChars);
-
-	// Root
-	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("level"),       World->GetMapName());
-	Root->SetStringField(TEXT("exported_at"), FDateTime::Now().ToString());
-	Root->SetNumberField(TEXT("item_count"),  ItemsArray.Num());
-	Root->SetObjectField(TEXT("scene_template"), SceneTemplate);
-
-	FString Output;
-	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
-	FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
-	return Output;
+    FString Output;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+    return Output;
 }

@@ -15,7 +15,8 @@ public:
 private:
 	void AddToolbarButton(FToolBarBuilder& Builder);
 	void ExportLevelToJson();
-	void ImportSceneFromJson();       // Abre file dialog y carga escenas en el combo
+	void ImportSceneFromJson();      
+	void ShowCreateSceneDialog();
 
 	TSharedPtr<FUICommandList> PluginCommands;
 
@@ -24,4 +25,9 @@ private:
 	TArray<TSharedPtr<FString>>      SceneOptions;        // Nombres para el combo
 	TSharedPtr<FString>              SelectedScene;       // Opción actualmente seleccionada
 	TSharedPtr<SComboBox<TSharedPtr<FString>>> SceneComboBox; // Referencia al widget
+	FString LoadedJsonPath;
+	TSharedPtr<FJsonObject> LoadedJsonRoot;
+	int32 SelectedSceneIndex = INDEX_NONE;
+
+	static const FString CreateSceneOption;
 };

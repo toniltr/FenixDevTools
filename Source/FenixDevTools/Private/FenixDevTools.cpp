@@ -14,6 +14,11 @@
 #include "IDesktopPlatform.h"
 #include "DesktopPlatformModule.h"
 
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Misc/Guid.h"
+
+const FString FFenixDevToolsModule::CreateSceneOption = TEXT("+ Create New Scene");
+
 #define LOCTEXT_NAMESPACE "FFenixDevToolsModule"
 
 void FFenixDevToolsModule::StartupModule()
@@ -81,16 +86,26 @@ void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 			.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type SelectType)
 			{
 				if (!Item.IsValid()) return;
+				SelectedScene = Item;
 
-				int32 Index = SceneOptions.IndexOfByPredicate([&](const TSharedPtr<FString>& S)
+				// "Create" es índice 0 del combo — no importa escena real
+				if (*Item == CreateSceneOption)
+				{
+					SelectedSceneIndex = INDEX_NONE;
+					return;
+				}
+
+				// El índice real en LoadedScenes = índice en SceneOptions - 1 (por el slot "Create")
+				int32 ComboIndex = SceneOptions.IndexOfByPredicate([&](const TSharedPtr<FString>& S)
 				{
 					return S.IsValid() && *S == *Item;
 				});
 
-				if (!LoadedScenes.IsValidIndex(Index)) return;
+				int32 SceneIndex = ComboIndex - 1; // descuenta el slot "Create"
+				if (!LoadedScenes.IsValidIndex(SceneIndex)) return;
 
-				SelectedScene = Item;
-				FFenixSceneImporter::ImportScene(LoadedScenes[Index]);
+				SelectedSceneIndex = SceneIndex;
+				FFenixSceneImporter::ImportScene(LoadedScenes[SceneIndex]);
 			})
 			.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item) -> TSharedRef<SWidget>
 			{
@@ -114,7 +129,75 @@ void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 
 void FFenixDevToolsModule::ExportLevelToJson()
 {
-	FFenixLevelExporter::ExportCurrentLevel();
+	 // ── Caso: "Create New Scene" seleccionado ──────────────────────
+    if (SelectedScene.IsValid() && *SelectedScene == CreateSceneOption)
+    {
+        if (!LoadedJsonRoot.IsValid() || LoadedJsonPath.IsEmpty())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No hay historia cargada. Usa 'Load Story' primero."));
+            return;
+        }
+        ShowCreateSceneDialog();
+        return;
+    }
+
+    // ── Caso 1: hay escena seleccionada → parchear el JSON de la historia ──
+    if (LoadedJsonRoot.IsValid()
+        && LoadedScenes.IsValidIndex(SelectedSceneIndex)
+        && !LoadedJsonPath.IsEmpty())
+    {
+        // Construir scene_template desde el nivel actual
+        TSharedPtr<FJsonObject> SceneData = FFenixLevelExporter::BuildSceneJson(
+            GEditor ? GEditor->GetEditorWorldContext().World() : nullptr
+        );
+        if (!SceneData.IsValid()) return;
+
+        // Recuperar el array "scenes" del root
+        const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
+        if (!LoadedJsonRoot->TryGetArrayField(TEXT("scenes"), ScenesArr)) return;
+
+        // Preservar el uuid y name originales de la escena seleccionada
+        TSharedPtr<FJsonObject> OriginalScene = LoadedScenes[SelectedSceneIndex];
+        FString OrigUUID, OrigName;
+        OriginalScene->TryGetStringField(TEXT("uuid"), OrigUUID);
+        OriginalScene->TryGetStringField(TEXT("name"), OrigName);
+
+        SceneData->SetStringField(TEXT("uuid"), OrigUUID);
+        SceneData->SetStringField(TEXT("name"), OrigName);
+
+        // Actualizar el objeto en el array (in-place)
+        // Reconstruimos el array con el elemento parcheado
+        TArray<TSharedPtr<FJsonValue>> NewScenesArr;
+        for (int32 i = 0; i < ScenesArr->Num(); ++i)
+        {
+            if (i == SelectedSceneIndex)
+                NewScenesArr.Add(MakeShared<FJsonValueObject>(SceneData));
+            else
+                NewScenesArr.Add((*ScenesArr)[i]);
+        }
+        LoadedJsonRoot->SetArrayField(TEXT("scenes"), NewScenesArr);
+        LoadedScenes[SelectedSceneIndex] = SceneData;   // sync en memoria
+
+        // Serializar y guardar sobreescribiendo el fichero original
+        FString Output;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+        FJsonSerializer::Serialize(LoadedJsonRoot.ToSharedRef(), Writer);
+
+        if (FFileHelper::SaveStringToFile(Output, *LoadedJsonPath))
+        {
+            UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Scene '%s' updated in %s"),
+                *OrigName, *LoadedJsonPath);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] Failed to save patched JSON to %s"),
+                *LoadedJsonPath);
+        }
+        return;
+    }
+
+    // ── Caso 2: no hay escena seleccionada → export genérico de siempre ──
+    FFenixLevelExporter::ExportCurrentLevel();
 }
 
 void FFenixDevToolsModule::ImportSceneFromJson()
@@ -143,6 +226,9 @@ void FFenixDevToolsModule::ImportSceneFromJson()
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
 	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return;
 
+	LoadedJsonPath = Files[0];
+	LoadedJsonRoot = Root; 
+
 	const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
 	if (!Root->TryGetArrayField(TEXT("scenes"), ScenesArr) || ScenesArr->Num() == 0)
 	{
@@ -154,11 +240,16 @@ void FFenixDevToolsModule::ImportSceneFromJson()
 	LoadedScenes.Empty();
 	SceneOptions.Empty();
 	SelectedScene.Reset();
+	SelectedSceneIndex = INDEX_NONE;
 
-	for (const auto& Val : *ScenesArr)
+	// ── Opción fija "Create" — siempre la primera ──
+	SceneOptions.Add(MakeShared<FString>(CreateSceneOption));
+
+	for (const auto &Val : *ScenesArr)
 	{
-		const TSharedPtr<FJsonObject>* SceneObj;
-		if (!Val->TryGetObject(SceneObj)) continue;
+		const TSharedPtr<FJsonObject> *SceneObj;
+		if (!Val->TryGetObject(SceneObj))
+			continue;
 
 		FString Name;
 		(*SceneObj)->TryGetStringField(TEXT("name"), Name);
@@ -173,6 +264,158 @@ void FFenixDevToolsModule::ImportSceneFromJson()
 
 	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Story loaded — %d scenes available"), SceneOptions.Num());
 }
+
+void FFenixDevToolsModule::ShowCreateSceneDialog()
+{
+    // Buffers compartidos con el diálogo vía TSharedPtr
+    TSharedPtr<FString> OutName = MakeShared<FString>();
+    TSharedPtr<FString> OutUUID = MakeShared<FString>(
+        FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower()
+    );
+
+    TSharedRef<SWindow> Window = SNew(SWindow)
+        .Title(FText::FromString(TEXT("Create New Scene")))
+        .ClientSize(FVector2D(400, 160))
+        .SupportsMaximize(false)
+        .SupportsMinimize(false)
+        .SizingRule(ESizingRule::FixedSize);
+
+    TWeakPtr<SWindow> WeakWindow = Window;
+
+    // Widgets de edición
+    TSharedPtr<SEditableTextBox> NameBox;
+    TSharedPtr<SEditableTextBox> UUIDBox;
+
+    TSharedRef<SWidget> Content =
+        SNew(SVerticalBox)
+
+        // ── Nombre ──────────────────────────────────────────────
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(12.f, 12.f, 12.f, 4.f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .VAlign(VAlign_Center)
+            .FillWidth(0.3f)
+            [
+                SNew(STextBlock).Text(LOCTEXT("SceneNameLabel", "Name"))
+            ]
+            + SHorizontalBox::Slot()
+            .FillWidth(0.7f)
+            [
+                SAssignNew(NameBox, SEditableTextBox)
+                .HintText(LOCTEXT("SceneNameHint", "My Scene"))
+            ]
+        ]
+
+        // ── UUID ─────────────────────────────────────────────────
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(12.f, 4.f, 12.f, 4.f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .VAlign(VAlign_Center)
+            .FillWidth(0.3f)
+            [
+                SNew(STextBlock).Text(LOCTEXT("SceneUUIDLabel", "UUID"))
+            ]
+            + SHorizontalBox::Slot()
+            .FillWidth(0.7f)
+            [
+                SAssignNew(UUIDBox, SEditableTextBox)
+                .Text(FText::FromString(*OutUUID))
+            ]
+        ]
+
+        // ── Botones ───────────────────────────────────────────────
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(12.f, 12.f)
+        .HAlign(HAlign_Right)
+        [
+            SNew(SHorizontalBox)
+
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.f, 0.f, 8.f, 0.f)
+            [
+                SNew(SButton)
+                .Text(LOCTEXT("CreateBtn", "Create"))
+                .OnClicked_Lambda([this, NameBox, UUIDBox, WeakWindow]() -> FReply
+                {
+                    const FString SceneName = NameBox->GetText().ToString().TrimStartAndEnd();
+                    const FString SceneUUID = UUIDBox->GetText().ToString().TrimStartAndEnd();
+
+                    if (SceneName.IsEmpty())
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] Scene name cannot be empty"));
+                        return FReply::Handled();
+                    }
+                    if (SceneUUID.IsEmpty())
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] UUID cannot be empty"));
+                        return FReply::Handled();
+                    }
+
+                    // Construir la nueva escena desde el nivel actual
+                    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+                    TSharedPtr<FJsonObject> NewScene = FFenixLevelExporter::BuildSceneJson(World);
+                    if (!NewScene.IsValid()) return FReply::Handled();
+
+                    NewScene->SetStringField(TEXT("uuid"), SceneUUID);
+                    NewScene->SetStringField(TEXT("name"), SceneName);
+
+                    // Añadir al array "scenes" del JSON root
+                    const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
+                    TArray<TSharedPtr<FJsonValue>> NewScenesArr;
+                    if (LoadedJsonRoot->TryGetArrayField(TEXT("scenes"), ScenesArr))
+                        NewScenesArr = *ScenesArr;
+
+                    NewScenesArr.Add(MakeShared<FJsonValueObject>(NewScene));
+                    LoadedJsonRoot->SetArrayField(TEXT("scenes"), NewScenesArr);
+
+                    // Guardar al disco
+                    FString Output;
+                    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+                    FJsonSerializer::Serialize(LoadedJsonRoot.ToSharedRef(), Writer);
+                    FFileHelper::SaveStringToFile(Output, *LoadedJsonPath);
+
+                    // Actualizar el combo con la nueva escena
+                    LoadedScenes.Add(NewScene);
+                    SceneOptions.Add(MakeShared<FString>(SceneName));
+                    if (SceneComboBox.IsValid())
+                        SceneComboBox->RefreshOptions();
+
+                    UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Scene '%s' (%s) created and saved"),
+                        *SceneName, *SceneUUID);
+
+                    if (TSharedPtr<SWindow> Win = WeakWindow.Pin())
+                        Win->RequestDestroyWindow();
+
+                    return FReply::Handled();
+                })
+            ]
+
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .Text(LOCTEXT("CancelBtn", "Cancel"))
+                .OnClicked_Lambda([WeakWindow]() -> FReply
+                {
+                    if (TSharedPtr<SWindow> Win = WeakWindow.Pin())
+                        Win->RequestDestroyWindow();
+                    return FReply::Handled();
+                })
+            ]
+        ];
+
+    Window->SetContent(Content);
+    FSlateApplication::Get().AddWindow(Window);
+}
+
 
 
 #undef LOCTEXT_NAMESPACE
