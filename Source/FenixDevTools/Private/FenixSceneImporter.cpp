@@ -93,17 +93,16 @@ bool FFenixSceneImporter::ParseScenes(const FString& JsonStr,
 
 void FFenixSceneImporter::ShowScenePicker(const TArray<TSharedPtr<FJsonObject>>& Scenes)
 {
-	// Build list of scene names
-	TSharedPtr<TArray<TSharedPtr<FJsonObject>>> SceneList =
-		MakeShared<TArray<TSharedPtr<FJsonObject>>>(Scenes);
-
 	TSharedRef<SWindow> Window = SNew(SWindow)
 		.Title(FText::FromString(TEXT("Select Scene to Import")))
 		.ClientSize(FVector2D(350, 400))
 		.SupportsMaximize(false)
 		.SupportsMinimize(false);
 
-	TSharedRef<SScrollBox> ScrollBox = SNew(SScrollBox);
+	// Capture window as weak pointer to avoid dangling reference in lambda
+	TWeakPtr<SWindow> WeakWindow = Window;
+
+	TSharedRef<SVerticalBox> VBox = SNew(SVerticalBox);
 
 	for (const TSharedPtr<FJsonObject>& Scene : Scenes)
 	{
@@ -112,19 +111,21 @@ void FFenixSceneImporter::ShowScenePicker(const TArray<TSharedPtr<FJsonObject>>&
 		Scene->TryGetStringField(TEXT("name"), SceneName);
 
 		const FString Label = FString::Printf(TEXT("%s  (%s)"), *SceneName, *SceneUUID);
+
+		// Copy by value so lambda owns the data
 		TSharedPtr<FJsonObject> SceneCopy = Scene;
 
-		ScrollBox->AddSlot()
+		VBox->AddSlot()
+		.AutoHeight()
 		.Padding(4.f)
 		[
 			SNew(SButton)
 			.HAlign(HAlign_Left)
-			.OnClicked_Lambda([SceneCopy, &Window]()
+			.OnClicked_Lambda([SceneCopy, WeakWindow]()
 			{
 				FFenixSceneImporter::ImportScene(SceneCopy);
-				// Close window after import
-				if (Window->GetNativeWindow().IsValid())
-					Window->RequestDestroyWindow();
+				if (TSharedPtr<SWindow> Win = WeakWindow.Pin())
+					Win->RequestDestroyWindow();
 				return FReply::Handled();
 			})
 			[
@@ -135,14 +136,11 @@ void FFenixSceneImporter::ShowScenePicker(const TArray<TSharedPtr<FJsonObject>>&
 	}
 
 	Window->SetContent(
-		SNew(SBox)
-		.Padding(8.f)
+		SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		.Padding(4.f)
 		[
-			SNew(SScrollBox)
-			+ SScrollBox::Slot()
-			[
-				ScrollBox
-			]
+			VBox
 		]
 	);
 
