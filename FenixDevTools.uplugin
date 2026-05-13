@@ -14,6 +14,20 @@
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "FenixCore",
+			"Enabled": true
+		},
+		{
+			"Name": "FenixPlay",
+			"Enabled": true
+		},
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		}
+	],
 	"Modules": [
 		{
 			"Name": "FenixDevTools",

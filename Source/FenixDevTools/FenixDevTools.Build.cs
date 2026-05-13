@@ -11,6 +11,8 @@ public class FenixDevTools : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"FenixCore",   // FFenixConditionGroup, FFenixEvent, FFenixItem
+			"FenixPlay",   // AFenixActor — leer conditions/events en el exporter
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
