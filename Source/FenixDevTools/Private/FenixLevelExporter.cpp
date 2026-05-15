@@ -118,7 +118,7 @@ static TSharedPtr<FJsonObject> MakeItem(const FString& BpClass, const TSharedPtr
 {
 	// Valores por defecto (actor sin datos Fenix)
 	FString ExportedUUID      = TEXT("");
-	FString InterceptNpc      = TEXT("");
+	FString InterceptCharacter      = TEXT("");
 	TSharedPtr<FJsonObject> ConditionsObj;
 	TArray<TSharedPtr<FJsonValue>> EventsArr;
 	TArray<TSharedPtr<FJsonValue>> BlockedEventsArr;
@@ -130,7 +130,7 @@ static TSharedPtr<FJsonObject> MakeItem(const FString& BpClass, const TSharedPtr
 		ConditionsObj    = SerializeConditionGroup(FenixActor->Conditions);
 		EventsArr        = SerializeEvents(FenixActor->Events);
 		BlockedEventsArr = SerializeEvents(FenixActor->BlockedEvents);
-		InterceptNpc     = FenixActor->InterceptNpcUUID;
+		InterceptCharacter     = FenixActor->InterceptCharacterUUID;
 	}
 	else
 	{
@@ -147,7 +147,7 @@ static TSharedPtr<FJsonObject> MakeItem(const FString& BpClass, const TSharedPtr
 	Item->SetObjectField(TEXT("conditions"),      ConditionsObj);
 	Item->SetArrayField (TEXT("events"),          EventsArr);
 	Item->SetArrayField (TEXT("blocked_events"),  BlockedEventsArr);
-	Item->SetStringField(TEXT("intercept_npc"),   InterceptNpc);
+	Item->SetStringField(TEXT("intercept_character"),   InterceptCharacter);
 	return Item;
 }
 
