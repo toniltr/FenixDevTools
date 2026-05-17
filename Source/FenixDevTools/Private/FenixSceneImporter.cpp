@@ -191,7 +191,7 @@ void FFenixSceneImporter::ClearLevel(UWorld *World)
 
 // ── Spawn ─────────────────────────────────────────────────────
 
-void FFenixSceneImporter::SpawnItem(UWorld *World, const TSharedPtr<FJsonObject> &Item)
+void FFenixSceneImporter::SpawnItem(UWorld *World, const TSharedPtr<FJsonObject> &Item, const FString& FolderName)
 {
 	FString BpClass;
 	Item->TryGetStringField(TEXT("blueprint_class"), BpClass);
@@ -237,8 +237,8 @@ void FFenixSceneImporter::SpawnItem(UWorld *World, const TSharedPtr<FJsonObject>
 		return FRotator(P, Y, R);
 	};
 
-	const FVector Loc = GetVec(*PlacementObj, TEXT("location"));
-	const FRotator Rot = GetRot(*PlacementObj);
+	const FVector Loc   = GetVec(*PlacementObj, TEXT("location"));
+	const FRotator Rot  = GetRot(*PlacementObj);
 	const FVector Scale = GetVec(*PlacementObj, TEXT("scale"));
 
 	FTransform Transform(Rot, Loc, Scale.IsZero() ? FVector::OneVector : Scale);
@@ -249,11 +249,16 @@ void FFenixSceneImporter::SpawnItem(UWorld *World, const TSharedPtr<FJsonObject>
 	AActor *Spawned = World->SpawnActor<AActor>(ActorClass, Transform, Params);
 	if (Spawned)
 	{
-		// Set actor label to uuid for identification
+		// Label = UUID — necesario para que el exportador pueda hacer match por label
 		FString UUID;
 		Item->TryGetStringField(TEXT("uuid"), UUID);
 		if (!UUID.IsEmpty())
 			Spawned->SetActorLabel(UUID);
+
+		// Carpeta en el outliner — agrupa todos los items de la escena bajo una sola carpeta
+		// evitando el spam visual de UUIDs sueltos. Carpeta: "Fenix/<SceneName>"
+		if (!FolderName.IsEmpty())
+			Spawned->SetFolderPath(*FString::Printf(TEXT("Fenix/%s"), *FolderName));
 	}
 }
 
@@ -285,7 +290,7 @@ void FFenixSceneImporter::ImportScene(const TSharedPtr<FJsonObject> &Scene)
 			const TSharedPtr<FJsonObject> *ItemObj;
 			if (Val->TryGetObject(ItemObj))
 			{
-				SpawnItem(World, *ItemObj);
+				SpawnItem(World, *ItemObj, SceneName);
 				++Spawned;
 			}
 		}

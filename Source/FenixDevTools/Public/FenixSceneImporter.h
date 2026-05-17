@@ -29,8 +29,8 @@ private:
 	// True if actor should be preserved (BP_Player, CameraActor, UDS).
 	static bool ShouldPreserve(AActor* Actor);
 
-	// Spawn a single item actor from JSON.
-	static void SpawnItem(UWorld* World, const TSharedPtr<FJsonObject>& Item);
+	// Spawn a single item actor from JSON. FolderName agrupa el actor en Fenix/<FolderName> en el outliner.
+	static void SpawnItem(UWorld* World, const TSharedPtr<FJsonObject>& Item, const FString& FolderName);
 
 	// Open OS file picker for JSON files. Returns path or empty.
 	static FString ShowOpenFileDialog();
