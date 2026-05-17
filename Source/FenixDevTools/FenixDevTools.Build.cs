@@ -28,7 +28,8 @@ public class FenixDevTools : ModuleRules
 			"Projects",          // IPluginManager
 			"DesktopPlatform",
 			"EditorScriptingUtilities",
-			"InputCore",  
+			"InputCore",
+			"SceneOutliner",     // FActorFolders — gestión de carpetas del outliner
 		});
 	}
 }

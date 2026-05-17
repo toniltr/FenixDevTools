@@ -16,6 +16,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/WorldSettings.h"
 #include "Engine/World.h"
+#include "ActorFolders.h"
 
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Misc/Guid.h"
@@ -478,9 +479,7 @@ void FFenixDevToolsModule::ClearLevel()
 	for (AActor* Actor : ToDestroy)
 		Actor->Destroy();
 
-	// Eliminar carpetas vacías del outliner
-	// UE5 gestiona las carpetas como FolderPaths en el mundo — eliminamos las que
-	// ya no tienen ningún actor asignado
+	// Eliminar carpetas vacías del outliner usando FActorFolders
 	TSet<FName> OccupiedFolders;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
@@ -489,15 +488,20 @@ void FFenixDevToolsModule::ClearLevel()
 			OccupiedFolders.Add(Folder);
 	}
 
-	// GetFolderPaths devuelve todas las carpetas registradas (incluidas vacías)
+	FActorFolders& Folders = FActorFolders::Get();
 	TArray<FName> AllFolders;
-	World->GetFolderNames(AllFolders);
+	Folders.ForEachFolder(*World, [&](const FActorFolderData& FolderData) -> bool
+	{
+		AllFolders.Add(FolderData.GetPath());
+		return true; // continuar iterando
+	});
+
 	int32 FoldersRemoved = 0;
 	for (const FName& Folder : AllFolders)
 	{
 		if (!OccupiedFolders.Contains(Folder))
 		{
-			World->RemoveFolder(Folder);
+			Folders.DeleteFolder(*World, Folder);
 			++FoldersRemoved;
 		}
 	}
