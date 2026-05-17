@@ -1,23 +1,30 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Dom/JsonObject.h"
 
-// Iterates all actors in the current level and exports their
-// name, class, location, rotation and scale to a JSON file.
+// Abre el JSON de historia, actualiza SOLO los placements de los items de la escena activa
+// haciendo match por actor label (UUID), y guarda el JSON en el mismo archivo.
+// El resto del item (conditions, events, blocked_events, intercept_*) queda intacto.
 class FENIXDEVTOOLS_API FFenixLevelExporter
 {
 public:
 
-	// Shows a save-file dialog and writes the JSON.
-	// Returns true if the file was saved successfully.
+	// Entry point: pide el JSON al usuario, actualiza placements y lo sobreescribe.
+	// Returns true si el archivo se guardó correctamente.
 	static bool ExportCurrentLevel();
 
+	// Construye un JSON de escena con solo uuid + placement de cada actor.
+	// Útil para debug o para crear una escena nueva desde cero.
 	static TSharedPtr<FJsonObject> BuildSceneJson(UWorld* World);
-
 
 private:
 
-	// Build the JSON string from all level actors.
-	static FString BuildJson(UWorld* World);
+	// Actualiza en Root el placement de los items de la escena que coincide con MapName.
+	// Solo toca el campo "placement" de cada item — preserva conditions, events, etc.
+	static void UpdateScenePlacements(UWorld* World, const FString& MapName,
+	                                  const TSharedPtr<FJsonObject>& Root);
 
+	// Abre el diálogo de selección de archivo JSON.
+	static FString ShowOpenFileDialog();
 };
