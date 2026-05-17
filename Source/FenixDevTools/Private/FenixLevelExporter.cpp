@@ -236,12 +236,16 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 	}
 
 	if (!bSceneFound)
+	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[FenixDevTools] Scene '%s' not found in JSON — nothing updated"), *MapName);
+	}
 	else
+	{
 		UE_LOG(LogTemp, Log,
 			TEXT("[FenixDevTools] Updated %d item placements (%d not found in level)"),
 			ItemsUpdated, ItemsNotFound);
+	}
 }
 
 // ── BuildSceneJson — mantenido para uso externo si se necesita ──
