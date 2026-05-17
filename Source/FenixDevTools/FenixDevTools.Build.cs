@@ -20,16 +20,15 @@ public class FenixDevTools : ModuleRules
 			"Slate",
 			"SlateCore",
 			"EditorStyle",
-			"UnrealEd",          // Editor utilities — UEditorEngine, actor iteration
-			"LevelEditor",       // FLevelEditorModule — toolbar extension
-			"ToolMenus",         // UToolMenus — register toolbar buttons
-			"Json",              // FJsonObject, FJsonSerializer
-			"JsonUtilities",     // FJsonObjectConverter
-			"Projects",          // IPluginManager
+			"UnrealEd",
+			"LevelEditor",
+			"ToolMenus",
+			"Json",
+			"JsonUtilities",
+			"Projects",
 			"DesktopPlatform",
 			"EditorScriptingUtilities",
 			"InputCore",
-			"SceneOutliner",     // FActorFolders — gestión de carpetas del outliner
 		});
 	}
 }

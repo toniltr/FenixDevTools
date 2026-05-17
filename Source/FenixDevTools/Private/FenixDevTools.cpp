@@ -16,7 +16,6 @@
 #include "EngineUtils.h"
 #include "GameFramework/WorldSettings.h"
 #include "Engine/World.h"
-#include "ActorFolders.h"
 
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Misc/Guid.h"
@@ -479,36 +478,23 @@ void FFenixDevToolsModule::ClearLevel()
 	for (AActor* Actor : ToDestroy)
 		Actor->Destroy();
 
-	// Eliminar carpetas vacías del outliner usando FActorFolders
-	TSet<FName> OccupiedFolders;
+	// Eliminar carpetas vacías del outliner.
+	// Recogemos qué carpetas siguen ocupadas tras el destroy,
+	// luego movemos los actores supervivientes fuera de cualquier carpeta vacía.
+	// La forma más simple y compatible es mover todos los actores supervivientes
+	// a la raíz — las carpetas Fenix/* quedan vacías y UE5 las oculta automáticamente.
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		const FName Folder = (*It)->GetFolderPath();
-		if (!Folder.IsNone())
-			OccupiedFolders.Add(Folder);
-	}
-
-	FActorFolders& Folders = FActorFolders::Get();
-	TArray<FName> AllFolders;
-	Folders.ForEachFolder(*World, [&](const FActorFolderData& FolderData) -> bool
-	{
-		AllFolders.Add(FolderData.GetPath());
-		return true; // continuar iterando
-	});
-
-	int32 FoldersRemoved = 0;
-	for (const FName& Folder : AllFolders)
-	{
-		if (!OccupiedFolders.Contains(Folder))
-		{
-			Folders.DeleteFolder(*World, Folder);
-			++FoldersRemoved;
-		}
+		AActor* Actor = *It;
+		if (!Actor) continue;
+		const FName Folder = Actor->GetFolderPath();
+		// Si el actor está en una carpeta Fenix (las que crea el importador), sacarlo a raíz
+		if (!Folder.IsNone() && Folder.ToString().StartsWith(TEXT("Fenix")))
+			Actor->SetFolderPath(NAME_None);
 	}
 
 	GEditor->RedrawLevelEditingViewports(true);
-	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] ClearLevel: destroyed %d actors, removed %d empty folders"),
-		ToDestroy.Num(), FoldersRemoved);
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] ClearLevel: destroyed %d actors"), ToDestroy.Num());
 }
 
 #undef LOCTEXT_NAMESPACE
