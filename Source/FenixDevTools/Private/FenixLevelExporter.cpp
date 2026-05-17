@@ -34,6 +34,7 @@ bool FFenixLevelExporter::ExportCurrentLevel()
 		return false;
 	}
 
+	// Leer el archivo original como bytes para preservar encoding
 	FString JsonStr;
 	if (!FFileHelper::LoadFileToString(JsonStr, *StoryPath))
 	{
@@ -50,22 +51,60 @@ bool FFenixLevelExporter::ExportCurrentLevel()
 		return false;
 	}
 
+	// Verificar integridad: contar campos en el primer item de la primera escena
+	const TArray<TSharedPtr<FJsonValue>>* ScenesCheck;
+	if (Root->TryGetArrayField(TEXT("scenes"), ScenesCheck) && ScenesCheck->Num() > 0)
+	{
+		const TSharedPtr<FJsonObject>* FirstScene;
+		const TArray<TSharedPtr<FJsonValue>>* FirstItems;
+		if ((*ScenesCheck)[0]->TryGetObject(FirstScene) &&
+			(*FirstScene)->TryGetArrayField(TEXT("items"), FirstItems) &&
+			FirstItems->Num() > 0)
+		{
+			const TSharedPtr<FJsonObject>* FirstItem;
+			if ((*FirstItems)[0]->TryGetObject(FirstItem))
+			{
+				const bool bHasBP = (*FirstItem)->HasField(TEXT("blueprint_class"));
+				const bool bHasEvents = (*FirstItem)->HasField(TEXT("events"));
+				UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] JSON integrity check — first item has blueprint_class: %s, events: %s"),
+					bHasBP ? TEXT("YES") : TEXT("NO"),
+					bHasEvents ? TEXT("YES") : TEXT("NO"));
+
+				if (!bHasBP || !bHasEvents)
+				{
+					UE_LOG(LogTemp, Error,
+						TEXT("[FenixDevTools] ABORT — JSON parsed incorrectly (missing fields). File may be corrupted or wrong encoding. NOT saving."));
+					return false;
+				}
+			}
+		}
+	}
+
 	// Actualizar solo los placements de la escena activa
 	const FString MapName = World->GetMapName();
-	UpdateScenePlacements(World, MapName, Root);
+	const bool bUpdated = UpdateScenePlacements(World, MapName, Root);
+	if (!bUpdated)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No updates made — file not saved"));
+		return false;
+	}
 
-	// Serializar de vuelta al mismo archivo
+	// Serializar siempre como UTF-8 sin BOM
 	FString Output;
-	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+	TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Output);
 	FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
 
-	if (!FFileHelper::SaveStringToFile(Output, *StoryPath))
+	// Guardar como UTF-8 sin BOM (EEncodingOptions::ForceUTF8WithoutBOM)
+	if (!FFileHelper::SaveStringToFile(Output, *StoryPath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] Failed to save: %s"), *StoryPath);
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Placements updated in: %s"), *StoryPath);
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Scene '%s' updated in %s"),
+		*GetShortMapName(MapName), *StoryPath);
 	return true;
 }
 
@@ -147,7 +186,7 @@ static bool ShouldSkipActor(const FString& Class, const FString& Label)
 	return false;
 }
 
-void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& MapName,
+bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& MapName,
                                                  const TSharedPtr<FJsonObject>& Root)
 {
 	// Nombre corto del mapa para hacer match con scene.name del JSON
@@ -193,7 +232,7 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 	if (!Root->TryGetArrayField(TEXT("scenes"), ScenesArr))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No 'scenes' array found in JSON"));
-		return;
+		return false;
 	}
 
 	int32 ItemsUpdated  = 0;
@@ -249,10 +288,18 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 			ItemObj->TryGetStringField(TEXT("uuid"), ItemUUID);
 			if (ItemUUID.IsEmpty()) continue;
 
+			// Log de integridad por item — detecta si el parse ha perdido campos
+			UE_LOG(LogTemp, Verbose,
+				TEXT("[FenixDevTools] Item '%s' — blueprint_class:%s conditions:%s events:%s"),
+				*ItemUUID,
+				ItemObj->HasField(TEXT("blueprint_class")) ? TEXT("✓") : TEXT("✗"),
+				ItemObj->HasField(TEXT("conditions"))      ? TEXT("✓") : TEXT("✗"),
+				ItemObj->HasField(TEXT("events"))          ? TEXT("✓") : TEXT("✗"));
+
 			AActor** FoundActor = ActorByUUID.Find(ItemUUID);
 			if (!FoundActor)
 			{
-				UE_LOG(LogTemp, Warning,
+				UE_LOG(LogTemp, Log,
 					TEXT("[FenixDevTools] Item '%s' not found in level — placement unchanged"),
 					*ItemUUID);
 				++ItemsNotFound;
@@ -275,13 +322,13 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		UE_LOG(LogTemp, Warning,
 			TEXT("[FenixDevTools] No scene matched map '%s' — nothing updated. Check scene 'name' in JSON matches the UE5 map name."),
 			*ShortMap);
+		return false;
 	}
-	else
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[FenixDevTools] Done — %d placements updated, %d items not found in level"),
-			ItemsUpdated, ItemsNotFound);
-	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[FenixDevTools] Done — %d placements updated, %d items not found in level"),
+		ItemsUpdated, ItemsNotFound);
+	return true;
 }
 
 // ── BuildSceneJson — mantenido para uso externo si se necesita ──
