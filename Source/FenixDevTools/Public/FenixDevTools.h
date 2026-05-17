@@ -15,7 +15,8 @@ public:
 private:
 	void AddToolbarButton(FToolBarBuilder& Builder);
 	void ExportLevelToJson();
-	void ImportSceneFromJson();      
+	void ImportSceneFromJson();
+	void ClearLevel();
 	void ShowCreateSceneDialog();
 
 	TSharedPtr<FUICommandList> PluginCommands;

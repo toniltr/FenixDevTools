@@ -13,6 +13,9 @@
 #include "Widgets/Text/STextBlock.h"
 #include "IDesktopPlatform.h"
 #include "DesktopPlatformModule.h"
+#include "EngineUtils.h"
+#include "GameFramework/WorldSettings.h"
+#include "Engine/World.h"
 
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Misc/Guid.h"
@@ -33,6 +36,10 @@ void FFenixDevToolsModule::StartupModule()
 	PluginCommands->MapAction(
 		FFenixDevToolsCommands::Get().ImportSceneFromJson,
 		FExecuteAction::CreateRaw(this, &FFenixDevToolsModule::ImportSceneFromJson)
+	);
+	PluginCommands->MapAction(
+		FFenixDevToolsCommands::Get().ClearLevel,
+		FExecuteAction::CreateRaw(this, &FFenixDevToolsModule::ClearLevel)
 	);
 
 	FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
@@ -69,6 +76,18 @@ void FFenixDevToolsModule::AddToolbarButton(FToolBarBuilder& Builder)
 		LOCTEXT("ImportSceneBtn", "Load Story"),
 		LOCTEXT("ImportSceneTooltip", "Load a Fenix story JSON to populate the scene selector"),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Import")
+	);
+
+	// Separador
+	Builder.AddSeparator();
+
+	// Botón Clear Level
+	Builder.AddToolBarButton(
+		FFenixDevToolsCommands::Get().ClearLevel,
+		NAME_None,
+		LOCTEXT("ClearLevelBtn", "Clear"),
+		LOCTEXT("ClearLevelTooltip", "Destroy all actors except BP_Player, CameraActor and Ultra Dynamic Sky"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Delete")
 	);
 
 	// Separador
@@ -415,7 +434,53 @@ void FFenixDevToolsModule::ShowCreateSceneDialog()
     FSlateApplication::Get().AddWindow(Window);
 }
 
+void FFenixDevToolsModule::ClearLevel()
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] ClearLevel: no editor world"));
+		return;
+	}
 
+	static const TArray<FString> PreservedSubstrings = {
+		TEXT("BP_Player"),
+		TEXT("CameraActor"),
+		TEXT("UltraDynamicSky"),
+		TEXT("Ultra_Dynamic_Sky"),
+	};
+
+	TArray<AActor*> ToDestroy;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor || Actor->HasAnyFlags(RF_Transient)) continue;
+		if (Actor->IsA<AWorldSettings>()) continue;
+
+		const FString Class = Actor->GetClass()->GetName();
+		const FString Label = Actor->GetActorLabel();
+
+		bool bPreserve = false;
+		for (const FString& P : PreservedSubstrings)
+		{
+			if (Class.Contains(P, ESearchCase::IgnoreCase) ||
+				Label.Contains(P, ESearchCase::IgnoreCase))
+			{
+				bPreserve = true;
+				break;
+			}
+		}
+
+		if (!bPreserve)
+			ToDestroy.Add(Actor);
+	}
+
+	for (AActor* Actor : ToDestroy)
+		Actor->Destroy();
+
+	GEditor->RedrawLevelEditingViewports(true);
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] ClearLevel: destroyed %d actors"), ToDestroy.Num());
+}
 
 #undef LOCTEXT_NAMESPACE
 IMPLEMENT_MODULE(FFenixDevToolsModule, FenixDevTools)

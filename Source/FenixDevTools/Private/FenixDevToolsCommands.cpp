@@ -19,6 +19,14 @@ void FFenixDevToolsCommands::RegisterCommands()
 		EUserInterfaceActionType::Button,
 		FInputChord()
 	);
+
+	UI_COMMAND(
+		ClearLevel,
+		"Clear Level",
+		"Destroy all actors except BP_Player, CameraActor and Ultra Dynamic Sky",
+		EUserInterfaceActionType::Button,
+		FInputChord()
+	);
 }
 
 #undef LOCTEXT_NAMESPACE

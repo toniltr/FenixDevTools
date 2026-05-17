@@ -20,4 +20,5 @@ public:
 
 	TSharedPtr<FUICommandInfo> ExportLevelToJson;
 	TSharedPtr<FUICommandInfo> ImportSceneFromJson;
+	TSharedPtr<FUICommandInfo> ClearLevel;
 };
