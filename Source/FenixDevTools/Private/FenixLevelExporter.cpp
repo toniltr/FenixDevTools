@@ -117,8 +117,9 @@ static TArray<TSharedPtr<FJsonValue>> SerializeEvents(const TArray<FFenixEvent>&
 static TSharedPtr<FJsonObject> MakeItem(const FString& BpClass, const TSharedPtr<FJsonObject>& Placement, AActor* Actor)
 {
 	// Valores por defecto (actor sin datos Fenix)
-	FString ExportedUUID      = TEXT("");
-	FString InterceptCharacter      = TEXT("");
+	FString ExportedUUID          = TEXT("");
+	FString InterceptCharacter    = TEXT("");
+	FString InterceptNode         = TEXT("");
 	TSharedPtr<FJsonObject> ConditionsObj;
 	TArray<TSharedPtr<FJsonValue>> EventsArr;
 	TArray<TSharedPtr<FJsonValue>> BlockedEventsArr;
@@ -130,7 +131,8 @@ static TSharedPtr<FJsonObject> MakeItem(const FString& BpClass, const TSharedPtr
 		ConditionsObj    = SerializeConditionGroup(FenixActor->Conditions);
 		EventsArr        = SerializeEvents(FenixActor->Events);
 		BlockedEventsArr = SerializeEvents(FenixActor->BlockedEvents);
-		InterceptCharacter     = FenixActor->InterceptCharacterUUID;
+		InterceptCharacter = FenixActor->InterceptCharacterUUID;
+		InterceptNode      = FenixActor->InterceptNodeUUID;
 	}
 	else
 	{
@@ -141,13 +143,14 @@ static TSharedPtr<FJsonObject> MakeItem(const FString& BpClass, const TSharedPtr
 	}
 
 	TSharedPtr<FJsonObject> Item = MakeShared<FJsonObject>();
-	Item->SetStringField(TEXT("uuid"),            ExportedUUID);
-	Item->SetStringField(TEXT("blueprint_class"), BpClass);
-	Item->SetObjectField(TEXT("placement"),       Placement);
-	Item->SetObjectField(TEXT("conditions"),      ConditionsObj);
-	Item->SetArrayField (TEXT("events"),          EventsArr);
-	Item->SetArrayField (TEXT("blocked_events"),  BlockedEventsArr);
-	Item->SetStringField(TEXT("intercept_character"),   InterceptCharacter);
+	Item->SetStringField(TEXT("uuid"),              ExportedUUID);
+	Item->SetStringField(TEXT("blueprint_class"),   BpClass);
+	Item->SetObjectField(TEXT("placement"),         Placement);
+	Item->SetObjectField(TEXT("conditions"),        ConditionsObj);
+	Item->SetArrayField (TEXT("events"),            EventsArr);
+	Item->SetArrayField (TEXT("blocked_events"),    BlockedEventsArr);
+	Item->SetStringField(TEXT("intercept_character"), InterceptCharacter);
+	Item->SetStringField(TEXT("intercept_node"),      InterceptNode);
 	return Item;
 }
 
@@ -242,9 +245,6 @@ TSharedPtr<FJsonObject> FFenixLevelExporter::BuildSceneJson(UWorld* World)
 		Scene->SetObjectField(TEXT("player"), PlayerPlacement);
 
 	Scene->SetArrayField(TEXT("items"), ItemsArray);
-
-	TArray<TSharedPtr<FJsonValue>> EmptyChars;
-	Scene->SetArrayField(TEXT("characters"), EmptyChars);
 
 	return Scene;
 }

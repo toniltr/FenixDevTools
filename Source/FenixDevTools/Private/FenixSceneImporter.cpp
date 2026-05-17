@@ -257,76 +257,6 @@ void FFenixSceneImporter::SpawnItem(UWorld *World, const TSharedPtr<FJsonObject>
 	}
 }
 
-// ── Spawn Character ───────────────────────────────────────────
-
-void FFenixSceneImporter::SpawnCharacter(UWorld *World, const TSharedPtr<FJsonObject> &Character)
-{
-	FString BpClass;
-	Character->TryGetStringField(TEXT("blueprint_class"), BpClass);
-	if (BpClass.IsEmpty())
-		return;
-
-	// Resolve Blueprint class — same strategy as SpawnItem
-	const FString AssetPath = FString::Printf(TEXT("/Game/Blueprints/%s.%s_C"), *BpClass, *BpClass);
-	UClass *ActorClass = LoadClass<AActor>(nullptr, *AssetPath);
-
-	if (!ActorClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] Character class not found: %s"), *AssetPath);
-		return;
-	}
-
-	// Read placement
-	const TSharedPtr<FJsonObject> *PlacementObj;
-	if (!Character->TryGetObjectField(TEXT("placement"), PlacementObj))
-		return;
-
-	auto GetVec = [](const TSharedPtr<FJsonObject> &O, const FString &Key) -> FVector
-	{
-		const TSharedPtr<FJsonObject> *Sub;
-		if (!O->TryGetObjectField(*Key, Sub))
-			return FVector::ZeroVector;
-		double X = 0, Y = 0, Z = 0;
-		(*Sub)->TryGetNumberField(TEXT("x"), X);
-		(*Sub)->TryGetNumberField(TEXT("y"), Y);
-		(*Sub)->TryGetNumberField(TEXT("z"), Z);
-		return FVector(X, Y, Z);
-	};
-
-	auto GetRot = [](const TSharedPtr<FJsonObject> &O) -> FRotator
-	{
-		const TSharedPtr<FJsonObject> *Sub;
-		if (!O->TryGetObjectField(TEXT("rotation"), Sub))
-			return FRotator::ZeroRotator;
-		double P = 0, Y = 0, R = 0;
-		(*Sub)->TryGetNumberField(TEXT("pitch"), P);
-		(*Sub)->TryGetNumberField(TEXT("yaw"), Y);
-		(*Sub)->TryGetNumberField(TEXT("roll"), R);
-		return FRotator(P, Y, R);
-	};
-
-	const FVector Loc   = GetVec(*PlacementObj, TEXT("location"));
-	const FRotator Rot  = GetRot(*PlacementObj);
-	const FVector Scale = GetVec(*PlacementObj, TEXT("scale"));
-
-	FTransform Transform(Rot, Loc, Scale.IsZero() ? FVector::OneVector : Scale);
-
-	FActorSpawnParameters Params;
-	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AActor *Spawned = World->SpawnActor<AActor>(ActorClass, Transform, Params);
-	if (Spawned)
-	{
-		FString UUID;
-		Character->TryGetStringField(TEXT("uuid"), UUID);
-		if (!UUID.IsEmpty())
-			Spawned->SetActorLabel(UUID);
-
-		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Character spawned: %s → %s at (%.0f, %.0f, %.0f)"),
-			*BpClass, *UUID, Loc.X, Loc.Y, Loc.Z);
-	}
-}
-
 // ── Import Scene ──────────────────────────────────────────────
 
 void FFenixSceneImporter::ImportScene(const TSharedPtr<FJsonObject> &Scene)
@@ -362,22 +292,9 @@ void FFenixSceneImporter::ImportScene(const TSharedPtr<FJsonObject> &Scene)
 		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Spawned %d items"), Spawned);
 	}
 
-	// 3. Spawn characters
-	const TArray<TSharedPtr<FJsonValue>> *CharsArr;
-	if (Scene->TryGetArrayField(TEXT("characters"), CharsArr))
-	{
-		int32 Spawned = 0;
-		for (const auto &Val : *CharsArr)
-		{
-			const TSharedPtr<FJsonObject> *CharObj;
-			if (Val->TryGetObject(CharObj))
-			{
-				SpawnCharacter(World, *CharObj);
-				++Spawned;
-			}
-		}
-		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Spawned %d characters"), Spawned);
-	}
+	// NOTA: Los Characters NO se spawnean aquí.
+	// Su posición y presencia en escena la gestiona UFenixRoutineSubsystem en runtime
+	// según el horario activo de cada personaje.
 
 	// ── Helper: lee location/rotation/scale directamente del objeto ──
 	auto ReadTransform = [](const TSharedPtr<FJsonObject> &Obj) -> FTransform
