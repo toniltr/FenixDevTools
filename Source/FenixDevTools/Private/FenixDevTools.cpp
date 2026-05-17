@@ -478,8 +478,33 @@ void FFenixDevToolsModule::ClearLevel()
 	for (AActor* Actor : ToDestroy)
 		Actor->Destroy();
 
+	// Eliminar carpetas vacías del outliner
+	// UE5 gestiona las carpetas como FolderPaths en el mundo — eliminamos las que
+	// ya no tienen ningún actor asignado
+	TSet<FName> OccupiedFolders;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		const FName Folder = (*It)->GetFolderPath();
+		if (!Folder.IsNone())
+			OccupiedFolders.Add(Folder);
+	}
+
+	// GetFolderPaths devuelve todas las carpetas registradas (incluidas vacías)
+	TArray<FName> AllFolders;
+	World->GetFolderNames(AllFolders);
+	int32 FoldersRemoved = 0;
+	for (const FName& Folder : AllFolders)
+	{
+		if (!OccupiedFolders.Contains(Folder))
+		{
+			World->RemoveFolder(Folder);
+			++FoldersRemoved;
+		}
+	}
+
 	GEditor->RedrawLevelEditingViewports(true);
-	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] ClearLevel: destroyed %d actors"), ToDestroy.Num());
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] ClearLevel: destroyed %d actors, removed %d empty folders"),
+		ToDestroy.Num(), FoldersRemoved);
 }
 
 #undef LOCTEXT_NAMESPACE
