@@ -143,11 +143,57 @@ bool FFenixLevelExporter::ExportCurrentLevel()
 		return false;
 	}
 
+	// DEBUG: verificar campos de cada item de la escena activa ANTES de serializar
+	const FString ShortMapDebug = GetShortMapName(MapName);
+	const TArray<TSharedPtr<FJsonValue>>* ScenesDebug;
+	if (Root->TryGetArrayField(TEXT("scenes"), ScenesDebug))
+	{
+		for (const auto& SV : *ScenesDebug)
+		{
+			const TSharedPtr<FJsonObject>* SO;
+			if (!SV->TryGetObject(SO)) continue;
+			FString SName;
+			(*SO)->TryGetStringField(TEXT("name"), SName);
+			if (!SName.Contains(ShortMapDebug, ESearchCase::IgnoreCase) &&
+				!ShortMapDebug.Contains(SName, ESearchCase::IgnoreCase)) continue;
+
+			const TArray<TSharedPtr<FJsonValue>>* IArr;
+			if (!(*SO)->TryGetArrayField(TEXT("items"), IArr)) break;
+			for (const auto& IV : *IArr)
+			{
+				const TSharedPtr<FJsonObject>* IO;
+				if (!IV->TryGetObject(IO)) continue;
+				FString IUuid;
+				(*IO)->TryGetStringField(TEXT("uuid"), IUuid);
+				UE_LOG(LogTemp, Log,
+					TEXT("[FenixDevTools] PRE-SERIALIZE [%s] bp:%s cond:%s ev:%s blk:%s"),
+					*IUuid,
+					(*IO)->HasField(TEXT("blueprint_class")) ? TEXT("Y") : TEXT("N"),
+					(*IO)->HasField(TEXT("conditions"))      ? TEXT("Y") : TEXT("N"),
+					(*IO)->HasField(TEXT("events"))          ? TEXT("Y") : TEXT("N"),
+					(*IO)->HasField(TEXT("blocked_events"))  ? TEXT("Y") : TEXT("N"));
+			}
+			break;
+		}
+	}
+
 	// Serializar siempre como UTF-8 sin BOM
 	FString Output;
 	TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
 		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Output);
 	FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+
+	// DEBUG: volcar los primeros 500 chars del output para verificar que el JSON tiene todos los campos
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Output preview (500 chars): %s"),
+		*Output.Left(500));
+
+	// Volcar también el item-bed-1 buscando en el output
+	const int32 BedIdx = Output.Find(TEXT("item-bed-1"));
+	if (BedIdx != INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] item-bed-1 context: %s"),
+			*Output.Mid(BedIdx, 300));
+	}
 
 	// Guardar como UTF-8 sin BOM (EEncodingOptions::ForceUTF8WithoutBOM)
 	if (!FFileHelper::SaveStringToFile(Output, *StoryPath,
