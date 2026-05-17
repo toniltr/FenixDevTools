@@ -289,10 +289,15 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		FString SceneName;
 		SceneObj->TryGetStringField(TEXT("name"), SceneName);
 
-		// Match flexible: nombre exacto O el short map contiene el nombre de la escena
+		// Match: el MapName que llega puede ser el nombre exacto de la escena (desde UI)
+		// o el nombre del mapa UE5 (desde ExportCurrentLevel)
 		const bool bMatch = SceneName.Equals(ShortMap, ESearchCase::IgnoreCase)
 		                 || ShortMap.Contains(SceneName, ESearchCase::IgnoreCase)
 		                 || SceneName.Contains(ShortMap, ESearchCase::IgnoreCase);
+
+		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Checking scene '%s' vs '%s' → %s"),
+			*SceneName, *ShortMap, bMatch ? TEXT("MATCH") : TEXT("skip"));
+
 		if (!bMatch) continue;
 
 		bSceneFound = true;

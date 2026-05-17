@@ -149,14 +149,16 @@ void FFenixDevToolsModule::ExportLevelToJson()
         UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
         if (!World) return;
 
-        // Recuperar nombre de la escena seleccionada para hacer match
+        // Usar el nombre de la escena seleccionada en la UI — no GetMapName()
+        // porque el mapa UE5 puede llamarse L_Game, L_Bedroom, etc.
         TSharedPtr<FJsonObject> OriginalScene = LoadedScenes[SelectedSceneIndex];
-        FString OrigName;
+        FString OrigUUID, OrigName;
+        OriginalScene->TryGetStringField(TEXT("uuid"), OrigUUID);
         OriginalScene->TryGetStringField(TEXT("name"), OrigName);
 
         // Actualizar SOLO los placements — preserva conditions, events, blueprint_class, etc.
-        const FString MapName = World->GetMapName();
-        const bool bUpdated = FFenixLevelExporter::UpdateScenePlacements(World, MapName, LoadedJsonRoot);
+        // Pasamos OrigName directamente como MapName para que el match sea exacto
+        const bool bUpdated = FFenixLevelExporter::UpdateScenePlacements(World, OrigName, LoadedJsonRoot);
         if (!bUpdated)
         {
             UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No placements updated for scene '%s'"), *OrigName);
