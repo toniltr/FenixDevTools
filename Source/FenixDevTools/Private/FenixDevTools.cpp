@@ -141,49 +141,46 @@ void FFenixDevToolsModule::ExportLevelToJson()
         return;
     }
 
-    // ── Caso 1: hay escena seleccionada → parchear el JSON de la historia ──
+    // ── Caso 1: hay escena seleccionada → actualizar solo placements en el JSON ──
     if (LoadedJsonRoot.IsValid()
         && LoadedScenes.IsValidIndex(SelectedSceneIndex)
         && !LoadedJsonPath.IsEmpty())
     {
-        // Construir scene_template desde el nivel actual
-        TSharedPtr<FJsonObject> SceneData = FFenixLevelExporter::BuildSceneJson(
-            GEditor ? GEditor->GetEditorWorldContext().World() : nullptr
-        );
-        if (!SceneData.IsValid()) return;
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) return;
 
-        // Recuperar el array "scenes" del root
-        const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
-        if (!LoadedJsonRoot->TryGetArrayField(TEXT("scenes"), ScenesArr)) return;
-
-        // Preservar el uuid y name originales de la escena seleccionada
+        // Recuperar nombre de la escena seleccionada para hacer match
         TSharedPtr<FJsonObject> OriginalScene = LoadedScenes[SelectedSceneIndex];
-        FString OrigUUID, OrigName;
-        OriginalScene->TryGetStringField(TEXT("uuid"), OrigUUID);
+        FString OrigName;
         OriginalScene->TryGetStringField(TEXT("name"), OrigName);
 
-        SceneData->SetStringField(TEXT("uuid"), OrigUUID);
-        SceneData->SetStringField(TEXT("name"), OrigName);
-
-        // Actualizar el objeto en el array (in-place)
-        // Reconstruimos el array con el elemento parcheado
-        TArray<TSharedPtr<FJsonValue>> NewScenesArr;
-        for (int32 i = 0; i < ScenesArr->Num(); ++i)
+        // Actualizar SOLO los placements — preserva conditions, events, blueprint_class, etc.
+        const FString MapName = World->GetMapName();
+        const bool bUpdated = FFenixLevelExporter::UpdateScenePlacements(World, MapName, LoadedJsonRoot);
+        if (!bUpdated)
         {
-            if (i == SelectedSceneIndex)
-                NewScenesArr.Add(MakeShared<FJsonValueObject>(SceneData));
-            else
-                NewScenesArr.Add((*ScenesArr)[i]);
+            UE_LOG(LogTemp, Warning, TEXT("[FenixDevTools] No placements updated for scene '%s'"), *OrigName);
+            return;
         }
-        LoadedJsonRoot->SetArrayField(TEXT("scenes"), NewScenesArr);
-        LoadedScenes[SelectedSceneIndex] = SceneData;   // sync en memoria
 
-        // Serializar y guardar sobreescribiendo el fichero original
+        // Sincronizar LoadedScenes con el Root actualizado (el objeto ya fue mutado in-place)
+        const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
+        if (LoadedJsonRoot->TryGetArrayField(TEXT("scenes"), ScenesArr)
+            && ScenesArr->IsValidIndex(SelectedSceneIndex))
+        {
+            const TSharedPtr<FJsonObject>* UpdatedScene;
+            if ((*ScenesArr)[SelectedSceneIndex]->TryGetObject(UpdatedScene))
+                LoadedScenes[SelectedSceneIndex] = *UpdatedScene;
+        }
+
+        // Serializar y guardar como UTF-8 sin BOM
         FString Output;
-        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+        TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+            TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Output);
         FJsonSerializer::Serialize(LoadedJsonRoot.ToSharedRef(), Writer);
 
-        if (FFileHelper::SaveStringToFile(Output, *LoadedJsonPath))
+        if (FFileHelper::SaveStringToFile(Output, *LoadedJsonPath,
+            FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
         {
             UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Scene '%s' updated in %s"),
                 *OrigName, *LoadedJsonPath);
