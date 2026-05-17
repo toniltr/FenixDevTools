@@ -13,6 +13,60 @@
 #include "IDesktopPlatform.h"
 #include "Framework/Application/SlateApplication.h"
 
+// ── Helpers globales — deben estar antes de cualquier uso ─────
+
+static FString GetShortMapName(const FString& MapName)
+{
+	FString Short = FPaths::GetBaseFilename(MapName);
+	if (Short.EndsWith(TEXT("_C"))) Short = Short.LeftChop(2);
+	return Short;
+}
+
+static bool ShouldSkipActor(const FString& Class, const FString& Label)
+{
+	static const TArray<FString> SkipSubstrings = {
+		TEXT("UltraDynamicSky"), TEXT("Ultra_Dynamic_Sky"),
+		TEXT("DirectionalLight"), TEXT("PointLight"), TEXT("SpotLight"), TEXT("SkyLight"),
+		TEXT("SkyAtmosphere"), TEXT("ExponentialHeightFog"), TEXT("PostProcessVolume"),
+		TEXT("NavMesh"), TEXT("WorldSettings"), TEXT("Brush"), TEXT("PlayerStart"),
+		TEXT("LevelSequence"), TEXT("AbstractNavData"), TEXT("RecastNavMesh"),
+		TEXT("SphereReflection"), TEXT("BoxReflection"), TEXT("LightmassImportance"),
+	};
+	for (const FString& S : SkipSubstrings)
+	{
+		if (Class.Contains(S, ESearchCase::IgnoreCase)) return true;
+		if (Label.Contains(S, ESearchCase::IgnoreCase)) return true;
+	}
+	return false;
+}
+
+static TSharedPtr<FJsonObject> MakeVec3(float X, float Y, float Z)
+{
+	TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
+	O->SetNumberField(TEXT("x"), FMath::RoundToFloat(X * 100.f) / 100.f);
+	O->SetNumberField(TEXT("y"), FMath::RoundToFloat(Y * 100.f) / 100.f);
+	O->SetNumberField(TEXT("z"), FMath::RoundToFloat(Z * 100.f) / 100.f);
+	return O;
+}
+
+static TSharedPtr<FJsonObject> MakeRotation(float Pitch, float Yaw, float Roll)
+{
+	TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
+	O->SetNumberField(TEXT("pitch"), FMath::RoundToFloat(Pitch * 100.f) / 100.f);
+	O->SetNumberField(TEXT("yaw"),   FMath::RoundToFloat(Yaw   * 100.f) / 100.f);
+	O->SetNumberField(TEXT("roll"),  FMath::RoundToFloat(Roll  * 100.f) / 100.f);
+	return O;
+}
+
+static TSharedPtr<FJsonObject> MakePlacement(const FVector& Loc, const FRotator& Rot, const FVector& Scale)
+{
+	TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
+	O->SetObjectField(TEXT("location"), MakeVec3(Loc.X, Loc.Y, Loc.Z));
+	O->SetObjectField(TEXT("rotation"), MakeRotation(Rot.Pitch, Rot.Yaw, Rot.Roll));
+	O->SetObjectField(TEXT("scale"),    MakeVec3(Scale.X, Scale.Y, Scale.Z));
+	return O;
+}
+
 // ── Entry point ───────────────────────────────────────────────
 
 bool FFenixLevelExporter::ExportCurrentLevel()
@@ -125,65 +179,6 @@ FString FFenixLevelExporter::ShowOpenFileDialog()
 		EFileDialogFlags::None,
 		Files);
 	return Files.Num() > 0 ? Files[0] : TEXT("");
-}
-
-// ── Helpers de placement ──────────────────────────────────────
-
-static TSharedPtr<FJsonObject> MakeVec3(float X, float Y, float Z)
-{
-	TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
-	O->SetNumberField(TEXT("x"), FMath::RoundToFloat(X * 100.f) / 100.f);
-	O->SetNumberField(TEXT("y"), FMath::RoundToFloat(Y * 100.f) / 100.f);
-	O->SetNumberField(TEXT("z"), FMath::RoundToFloat(Z * 100.f) / 100.f);
-	return O;
-}
-
-static TSharedPtr<FJsonObject> MakeRotation(float Pitch, float Yaw, float Roll)
-{
-	TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
-	O->SetNumberField(TEXT("pitch"), FMath::RoundToFloat(Pitch * 100.f) / 100.f);
-	O->SetNumberField(TEXT("yaw"),   FMath::RoundToFloat(Yaw   * 100.f) / 100.f);
-	O->SetNumberField(TEXT("roll"),  FMath::RoundToFloat(Roll  * 100.f) / 100.f);
-	return O;
-}
-
-static TSharedPtr<FJsonObject> MakePlacement(const FVector& Loc, const FRotator& Rot, const FVector& Scale)
-{
-	TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
-	O->SetObjectField(TEXT("location"), MakeVec3(Loc.X, Loc.Y, Loc.Z));
-	O->SetObjectField(TEXT("rotation"), MakeRotation(Rot.Pitch, Rot.Yaw, Rot.Roll));
-	O->SetObjectField(TEXT("scale"),    MakeVec3(Scale.X, Scale.Y, Scale.Z));
-	return O;
-}
-
-// ── Core: actualiza solo los placements de la escena activa ───
-
-// Devuelve el nombre corto del mapa: quita path y sufijo _C si los tiene
-static FString GetShortMapName(const FString& MapName)
-{
-	// GetMapName() puede devolver "/Game/Maps/Bedroom" o "Fenix_Bedroom" o "Bedroom"
-	FString Short = FPaths::GetBaseFilename(MapName); // quita path y extensión
-	if (Short.EndsWith(TEXT("_C"))) Short = Short.LeftChop(2);
-	return Short;
-}
-
-// Actores que nunca deben entrar en el mapa UUID — ni UDS, ni luces, ni volúmenes
-static bool ShouldSkipActor(const FString& Class, const FString& Label)
-{
-	static const TArray<FString> SkipSubstrings = {
-		TEXT("UltraDynamicSky"), TEXT("Ultra_Dynamic_Sky"),
-		TEXT("DirectionalLight"), TEXT("PointLight"), TEXT("SpotLight"), TEXT("SkyLight"),
-		TEXT("SkyAtmosphere"), TEXT("ExponentialHeightFog"), TEXT("PostProcessVolume"),
-		TEXT("NavMesh"), TEXT("WorldSettings"), TEXT("Brush"), TEXT("PlayerStart"),
-		TEXT("LevelSequence"), TEXT("AbstractNavData"), TEXT("RecastNavMesh"),
-		TEXT("SphereReflection"), TEXT("BoxReflection"), TEXT("LightmassImportance"),
-	};
-	for (const FString& S : SkipSubstrings)
-	{
-		if (Class.Contains(S, ESearchCase::IgnoreCase)) return true;
-		if (Label.Contains(S, ESearchCase::IgnoreCase)) return true;
-	}
-	return false;
 }
 
 bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& MapName,
