@@ -119,11 +119,42 @@ static TSharedPtr<FJsonObject> MakePlacement(const FVector& Loc, const FRotator&
 
 // ── Core: actualiza solo los placements de la escena activa ───
 
+// Devuelve el nombre corto del mapa: quita path y sufijo _C si los tiene
+static FString GetShortMapName(const FString& MapName)
+{
+	// GetMapName() puede devolver "/Game/Maps/Bedroom" o "Fenix_Bedroom" o "Bedroom"
+	FString Short = FPaths::GetBaseFilename(MapName); // quita path y extensión
+	if (Short.EndsWith(TEXT("_C"))) Short = Short.LeftChop(2);
+	return Short;
+}
+
+// Actores que nunca deben entrar en el mapa UUID — ni UDS, ni luces, ni volúmenes
+static bool ShouldSkipActor(const FString& Class, const FString& Label)
+{
+	static const TArray<FString> SkipSubstrings = {
+		TEXT("UltraDynamicSky"), TEXT("Ultra_Dynamic_Sky"),
+		TEXT("DirectionalLight"), TEXT("PointLight"), TEXT("SpotLight"), TEXT("SkyLight"),
+		TEXT("SkyAtmosphere"), TEXT("ExponentialHeightFog"), TEXT("PostProcessVolume"),
+		TEXT("NavMesh"), TEXT("WorldSettings"), TEXT("Brush"), TEXT("PlayerStart"),
+		TEXT("LevelSequence"), TEXT("AbstractNavData"), TEXT("RecastNavMesh"),
+		TEXT("SphereReflection"), TEXT("BoxReflection"), TEXT("LightmassImportance"),
+	};
+	for (const FString& S : SkipSubstrings)
+	{
+		if (Class.Contains(S, ESearchCase::IgnoreCase)) return true;
+		if (Label.Contains(S, ESearchCase::IgnoreCase)) return true;
+	}
+	return false;
+}
+
 void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& MapName,
                                                  const TSharedPtr<FJsonObject>& Root)
 {
-	// Construir mapa UUID → transform desde los actores del nivel
-	// Key: actor label (que es el UUID del item)
+	// Nombre corto del mapa para hacer match con scene.name del JSON
+	const FString ShortMap = GetShortMapName(MapName);
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Map name: '%s' → short: '%s'"), *MapName, *ShortMap);
+
+	// Construir mapa UUID → actor desde los actores del nivel
 	TMap<FString, AActor*> ActorByUUID;
 	AActor* CameraActor = nullptr;
 	AActor* PlayerActor = nullptr;
@@ -136,6 +167,9 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		const FString Class = Actor->GetClass()->GetName();
 		const FString Label = Actor->GetActorLabel();
 
+		// Excluir explícitamente actores que nunca son items Fenix
+		if (ShouldSkipActor(Class, Label)) continue;
+
 		if (Class.Contains(TEXT("CameraActor")) || Label.Contains(TEXT("CameraActor")))
 		{
 			CameraActor = Actor;
@@ -147,12 +181,14 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 			continue;
 		}
 
-		// Solo actores con label que parezca un UUID (no vacío, no nombre genérico de clase)
-		if (!Label.IsEmpty() && Label != Class)
+		// Solo actores cuyo label no sea igual al nombre de la clase (no son genéricos sin UUID)
+		if (!Label.IsEmpty() && !Label.Equals(Class, ESearchCase::IgnoreCase))
 			ActorByUUID.Add(Label, Actor);
 	}
 
-	// Buscar la escena en el JSON por nombre (MapName)
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] %d actors in UUID map"), ActorByUUID.Num());
+
+	// Buscar la escena en el JSON por nombre corto
 	const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
 	if (!Root->TryGetArrayField(TEXT("scenes"), ScenesArr))
 	{
@@ -160,9 +196,9 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		return;
 	}
 
-	int32 ItemsUpdated      = 0;
-	int32 ItemsNotFound     = 0;
-	bool  bSceneFound       = false;
+	int32 ItemsUpdated  = 0;
+	int32 ItemsNotFound = 0;
+	bool  bSceneFound   = false;
 
 	for (const auto& SceneVal : *ScenesArr)
 	{
@@ -173,15 +209,14 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		FString SceneName;
 		SceneObj->TryGetStringField(TEXT("name"), SceneName);
 
-		// Match por nombre de mapa (ignorar sufijo _C si lo tiene)
-		FString CleanMap = MapName;
-		if (CleanMap.EndsWith(TEXT("_C"))) CleanMap = CleanMap.LeftChop(2);
-
-		if (!SceneName.Equals(CleanMap, ESearchCase::IgnoreCase))
-			continue;
+		// Match flexible: nombre exacto O el short map contiene el nombre de la escena
+		const bool bMatch = SceneName.Equals(ShortMap, ESearchCase::IgnoreCase)
+		                 || ShortMap.Contains(SceneName, ESearchCase::IgnoreCase)
+		                 || SceneName.Contains(ShortMap, ESearchCase::IgnoreCase);
+		if (!bMatch) continue;
 
 		bSceneFound = true;
-		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Found scene '%s' in JSON"), *SceneName);
+		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Matched scene '%s' with map '%s'"), *SceneName, *ShortMap);
 
 		// Actualizar camera y player
 		if (CameraActor)
@@ -218,7 +253,7 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 			if (!FoundActor)
 			{
 				UE_LOG(LogTemp, Warning,
-					TEXT("[FenixDevTools] Item UUID '%s' not found in level — placement unchanged"),
+					TEXT("[FenixDevTools] Item '%s' not found in level — placement unchanged"),
 					*ItemUUID);
 				++ItemsNotFound;
 				continue;
@@ -238,12 +273,13 @@ void FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 	if (!bSceneFound)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[FenixDevTools] Scene '%s' not found in JSON — nothing updated"), *MapName);
+			TEXT("[FenixDevTools] No scene matched map '%s' — nothing updated. Check scene 'name' in JSON matches the UE5 map name."),
+			*ShortMap);
 	}
 	else
 	{
 		UE_LOG(LogTemp, Log,
-			TEXT("[FenixDevTools] Updated %d item placements (%d not found in level)"),
+			TEXT("[FenixDevTools] Done — %d placements updated, %d items not found in level"),
 			ItemsUpdated, ItemsNotFound);
 	}
 }
@@ -266,6 +302,8 @@ TSharedPtr<FJsonObject> FFenixLevelExporter::BuildSceneJson(UWorld* World)
 		const FString Label = Actor->GetActorLabel();
 		const FString Class = Actor->GetClass()->GetName();
 
+		if (ShouldSkipActor(Class, Label)) continue;
+
 		if (Class.Contains(TEXT("CameraActor")) || Label.Contains(TEXT("CameraActor")))
 		{
 			CameraPlacement = MakePlacement(Actor->GetActorLocation(),
@@ -280,10 +318,9 @@ TSharedPtr<FJsonObject> FFenixLevelExporter::BuildSceneJson(UWorld* World)
 			                               Actor->GetActorScale3D());
 			continue;
 		}
-		if (Actor->IsEditorOnly()) continue;
 
 		const FString UUID = Label;
-		if (UUID.IsEmpty() || UUID == Class) continue;
+		if (UUID.IsEmpty() || UUID.Equals(Class, ESearchCase::IgnoreCase)) continue;
 
 		TSharedPtr<FJsonObject> Item = MakeShared<FJsonObject>();
 		Item->SetStringField(TEXT("uuid"), UUID);
