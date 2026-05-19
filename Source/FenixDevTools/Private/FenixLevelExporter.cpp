@@ -234,8 +234,11 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 	const FString ShortMap = GetShortMapName(MapName);
 	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Map name: '%s' → short: '%s'"), *MapName, *ShortMap);
 
-	// Construir mapa UUID → actor desde los actores del nivel
-	TMap<FString, AActor*> ActorByUUID;
+	// ── 1. Indexar actores del nivel ─────────────────────────────────────────
+	// UUID → actor  (label = UUID para items Fenix)
+	// También capturamos clase BP para poder crear items nuevos
+	TMap<FString, AActor*> ActorByUUID;      // items Fenix existentes
+	TMap<FString, FString> ClassByUUID;      // blueprint_class de cada actor del nivel
 	AActor* CameraActor = nullptr;
 	AActor* PlayerActor = nullptr;
 
@@ -247,7 +250,6 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		const FString Class = Actor->GetClass()->GetName();
 		const FString Label = Actor->GetActorLabel();
 
-		// Excluir explícitamente actores que nunca son items Fenix
 		if (ShouldSkipActor(Class, Label)) continue;
 
 		if (Class.Contains(TEXT("CameraActor")) || Label.Contains(TEXT("CameraActor")))
@@ -261,14 +263,22 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 			continue;
 		}
 
-		// Solo actores cuyo label no sea igual al nombre de la clase (no son genéricos sin UUID)
+		// Solo actores con label distinto al nombre de clase (tienen UUID asignado)
 		if (!Label.IsEmpty() && !Label.Equals(Class, ESearchCase::IgnoreCase))
+		{
 			ActorByUUID.Add(Label, Actor);
+
+			// Obtener blueprint_class limpio: quitar sufijo _C
+			FString BpClass = Class;
+			if (BpClass.EndsWith(TEXT("_C")))
+				BpClass = BpClass.LeftChop(2);
+			ClassByUUID.Add(Label, BpClass);
+		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] %d actors in UUID map"), ActorByUUID.Num());
+	UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] %d actors in level"), ActorByUUID.Num());
 
-	// Buscar la escena en el JSON por nombre corto
+	// ── 2. Localizar la escena en el JSON ─────────────────────────────────────
 	const TArray<TSharedPtr<FJsonValue>>* ScenesArr;
 	if (!Root->TryGetArrayField(TEXT("scenes"), ScenesArr))
 	{
@@ -276,9 +286,7 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		return false;
 	}
 
-	int32 ItemsUpdated  = 0;
-	int32 ItemsNotFound = 0;
-	bool  bSceneFound   = false;
+	bool bSceneFound = false;
 
 	for (const auto& SceneVal : *ScenesArr)
 	{
@@ -289,8 +297,6 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		FString SceneName;
 		SceneObj->TryGetStringField(TEXT("name"), SceneName);
 
-		// Match: el MapName que llega puede ser el nombre exacto de la escena (desde UI)
-		// o el nombre del mapa UE5 (desde ExportCurrentLevel)
 		const bool bMatch = SceneName.Equals(ShortMap, ESearchCase::IgnoreCase)
 		                 || ShortMap.Contains(SceneName, ESearchCase::IgnoreCase)
 		                 || SceneName.Contains(ShortMap, ESearchCase::IgnoreCase);
@@ -301,9 +307,9 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 		if (!bMatch) continue;
 
 		bSceneFound = true;
-		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Matched scene '%s' with map '%s'"), *SceneName, *ShortMap);
+		UE_LOG(LogTemp, Log, TEXT("[FenixDevTools] Matched scene '%s'"), *SceneName);
 
-		// Actualizar camera y player
+		// ── 3. Camera y Player ────────────────────────────────────────────────
 		if (CameraActor)
 		{
 			SceneObj->SetObjectField(TEXT("camera"),
@@ -319,46 +325,106 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 				              PlayerActor->GetActorScale3D()));
 		}
 
-		// Actualizar solo el placement de cada item — preservar todo lo demás
+		// ── 4. Merge de items ─────────────────────────────────────────────────
+		//
+		//  A) Item en JSON y en nivel  → actualiza solo placement (preserva todo lo demás)
+		//  B) Item en JSON pero NO en nivel → se elimina (borrado manual en editor)
+		//  C) Actor en nivel pero NO en JSON → se añade como item nuevo con defaults vacíos
+
 		const TArray<TSharedPtr<FJsonValue>>* ItemsArr;
 		if (!SceneObj->TryGetArrayField(TEXT("items"), ItemsArr))
-			break;
-
-		for (const auto& ItemVal : *ItemsArr)
 		{
-			const TSharedPtr<FJsonObject>* ItemObjPtr;
-			if (!ItemVal->TryGetObject(ItemObjPtr)) continue;
-			TSharedPtr<FJsonObject> ItemObj = *ItemObjPtr;
-
-			FString ItemUUID;
-			ItemObj->TryGetStringField(TEXT("uuid"), ItemUUID);
-			if (ItemUUID.IsEmpty()) continue;
-
-			// Log de integridad por item — detecta si el parse ha perdido campos
-			UE_LOG(LogTemp, Verbose,
-				TEXT("[FenixDevTools] Item '%s' — blueprint_class:%s conditions:%s events:%s"),
-				*ItemUUID,
-				ItemObj->HasField(TEXT("blueprint_class")) ? TEXT("✓") : TEXT("✗"),
-				ItemObj->HasField(TEXT("conditions"))      ? TEXT("✓") : TEXT("✗"),
-				ItemObj->HasField(TEXT("events"))          ? TEXT("✓") : TEXT("✗"));
-
-			AActor** FoundActor = ActorByUUID.Find(ItemUUID);
-			if (!FoundActor)
-			{
-				UE_LOG(LogTemp, Log,
-					TEXT("[FenixDevTools] Item '%s' not found in level — placement unchanged"),
-					*ItemUUID);
-				++ItemsNotFound;
-				continue;
-			}
-
-			// Solo actualizamos placement — el resto del item queda intacto
-			ItemObj->SetObjectField(TEXT("placement"),
-				MakePlacement((*FoundActor)->GetActorLocation(),
-				              (*FoundActor)->GetActorRotation(),
-				              (*FoundActor)->GetActorScale3D()));
-			++ItemsUpdated;
+			// Si no hay array de items todavía, creamos uno vacío para el paso C
+			SceneObj->SetArrayField(TEXT("items"), TArray<TSharedPtr<FJsonValue>>());
+			SceneObj->TryGetArrayField(TEXT("items"), ItemsArr);
 		}
+
+		// Rastrear qué UUIDs del JSON hemos procesado
+		TSet<FString> ProcessedUUIDs;
+
+		// Nuevo array resultante
+		TArray<TSharedPtr<FJsonValue>> NewItems;
+		int32 Updated = 0, Removed = 0;
+
+		if (ItemsArr)
+		{
+			for (const auto& ItemVal : *ItemsArr)
+			{
+				const TSharedPtr<FJsonObject>* ItemObjPtr;
+				if (!ItemVal->TryGetObject(ItemObjPtr)) continue;
+				TSharedPtr<FJsonObject> ItemObj = *ItemObjPtr;
+
+				FString ItemUUID;
+				ItemObj->TryGetStringField(TEXT("uuid"), ItemUUID);
+				if (ItemUUID.IsEmpty()) continue;
+
+				ProcessedUUIDs.Add(ItemUUID);
+
+				AActor** FoundActor = ActorByUUID.Find(ItemUUID);
+				if (!FoundActor)
+				{
+					// CASO B: no está en el nivel → eliminado por el usuario → no lo añadimos
+					UE_LOG(LogTemp, Log,
+						TEXT("[FenixDevTools] Item '%s' removed from level → deleted from JSON"),
+						*ItemUUID);
+					++Removed;
+					continue;
+				}
+
+				// CASO A: existe en nivel → actualizar solo placement
+				ItemObj->SetObjectField(TEXT("placement"),
+					MakePlacement((*FoundActor)->GetActorLocation(),
+					              (*FoundActor)->GetActorRotation(),
+					              (*FoundActor)->GetActorScale3D()));
+				++Updated;
+
+				NewItems.Add(MakeShared<FJsonValueObject>(ItemObj));
+			}
+		}
+
+		// CASO C: actores del nivel que NO estaban en el JSON → items nuevos
+		int32 Added = 0;
+		for (const auto& Pair : ActorByUUID)
+		{
+			const FString& UUID = Pair.Key;
+			if (ProcessedUUIDs.Contains(UUID)) continue; // ya procesado en el paso A
+
+			AActor* Actor = Pair.Value;
+			const FString* BpClass = ClassByUUID.Find(UUID);
+
+			// Construir item nuevo con estructura completa y defaults vacíos
+			TSharedPtr<FJsonObject> NewItem = MakeShared<FJsonObject>();
+			NewItem->SetStringField(TEXT("uuid"),            UUID);
+			NewItem->SetStringField(TEXT("blueprint_class"), BpClass ? *BpClass : TEXT(""));
+			NewItem->SetObjectField(TEXT("placement"),
+				MakePlacement(Actor->GetActorLocation(),
+				              Actor->GetActorRotation(),
+				              Actor->GetActorScale3D()));
+
+			// conditions vacías
+			TSharedPtr<FJsonObject> Conditions = MakeShared<FJsonObject>();
+			Conditions->SetStringField(TEXT("operator"), TEXT("AND"));
+			Conditions->SetArrayField(TEXT("rules"), TArray<TSharedPtr<FJsonValue>>());
+			NewItem->SetObjectField(TEXT("conditions"), Conditions);
+
+			// events, blocked_events e intercept vacíos
+			NewItem->SetArrayField(TEXT("events"),         TArray<TSharedPtr<FJsonValue>>());
+			NewItem->SetArrayField(TEXT("blocked_events"), TArray<TSharedPtr<FJsonValue>>());
+			NewItem->SetStringField(TEXT("intercept_character"), TEXT(""));
+
+			NewItems.Add(MakeShared<FJsonValueObject>(NewItem));
+			++Added;
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[FenixDevTools] New actor '%s' (%s) → added to JSON"),
+				*UUID, BpClass ? **BpClass : TEXT("unknown"));
+		}
+
+		SceneObj->SetArrayField(TEXT("items"), NewItems);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("[FenixDevTools] Merge done — %d updated, %d removed, %d added"),
+			Updated, Removed, Added);
 
 		break; // Solo una escena por mapa
 	}
@@ -366,14 +432,11 @@ bool FFenixLevelExporter::UpdateScenePlacements(UWorld* World, const FString& Ma
 	if (!bSceneFound)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[FenixDevTools] No scene matched map '%s' — nothing updated. Check scene 'name' in JSON matches the UE5 map name."),
+			TEXT("[FenixDevTools] No scene matched map '%s'. Check scene 'name' in JSON."),
 			*ShortMap);
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log,
-		TEXT("[FenixDevTools] Done — %d placements updated, %d items not found in level"),
-		ItemsUpdated, ItemsNotFound);
 	return true;
 }
 

@@ -14,9 +14,11 @@ public:
 	// Returns true si el archivo se guardó correctamente.
 	static bool ExportCurrentLevel();
 
-	// Actualiza en Root el placement de los items de la escena que coincide con MapName.
-	// Solo toca el campo "placement" de cada item — preserva conditions, events, etc.
-	// Devuelve true si encontró la escena y actualizó al menos un item.
+	// Merge completo de la escena activa en Root:
+	//   - Item en JSON y en nivel  → actualiza placement (preserva conditions, events, etc.)
+	//   - Item en JSON pero NO en nivel → se elimina (borrado manual en el editor)
+	//   - Actor en nivel pero NO en JSON → se añade como item nuevo con defaults vacíos
+	// Devuelve true si encontró la escena y realizó el merge.
 	static bool UpdateScenePlacements(UWorld* World, const FString& MapName,
 	                                  const TSharedPtr<FJsonObject>& Root);
 
