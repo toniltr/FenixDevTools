@@ -3,6 +3,8 @@
 #include "Engine/World.h"
 #include "Engine/StaticMeshActor.h"
 #include "GameFramework/Actor.h"
+#include "Engine/Brush.h"
+#include "GameFramework/DefaultPhysicsVolume.h"
 #include "Editor.h"
 #include "EditorAssetLibrary.h"
 #include "Dom/JsonObject.h"
@@ -168,6 +170,14 @@ bool FFenixSceneImporter::ShouldPreserve(AActor *Actor)
 
 	// Always preserve engine internals
 	if (Actor->IsA<AWorldSettings>())
+		return true;
+
+	// DefaultBrush — si se destruye el nivel queda corrupto (Assertion failed: DefaultBrush->Brush != nullptr)
+	if (Actor->IsA<ABrush>())
+		return true;
+
+	// Physics volume por defecto del mundo
+	if (Actor->IsA<ADefaultPhysicsVolume>())
 		return true;
 
 	return false;
